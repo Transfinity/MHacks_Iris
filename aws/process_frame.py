@@ -19,11 +19,11 @@ def process_frame(filename, bucket, key):
 
     #Do OCR on the file
     #lines = fp.readlines()
-    lines = ['testing a long tweet',' this should get
-    interesting and should generate an',' html file to
-    display the result.  hmmmmm mmmmmmmmmmmmmmmmmmmmm 
-    mmmmmmmmmmmmmmmmmm mmmmmmmmmmmmmm mmmmmmmmmmmm 
-    mmmmmmmmm mmmmmmmmm', ' what a strange tweet...']
+    lines = ['testing a long tweet',' this should get',
+    'interesting and should generate an',' html file to',
+    'display the result.  hmmmmm mmmmmmmmmmmmmmmmmmmmm ',
+    'mmmmmmmmmmmmmmmmmm mmmmmmmmmmmmmm mmmmmmmmmmmm ',
+    'mmmmmmmmm mmmmmmmmm', ' what a strange tweet...']
     text = str(random.randint(0, 1000))
     for l in lines:
         text = text + l
