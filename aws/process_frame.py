@@ -2,6 +2,7 @@ import os
 import boto
 import simplejson
 import twitter
+import random
 
 cfg_fname = os.environ['HOME']+'/.twit.cfg'
 fp = open(cfg_fname, 'r')
@@ -14,11 +15,16 @@ fp.close()
 def process_frame(filename, bucket, key):
     #Open the file
     print '  > processing \'' + filename + '\''
-    fp = open(filename, "r")
+    #fp = open(filename, "r")
 
     #Do OCR on the file
-    lines = fp.readlines()
-    text = ''
+    #lines = fp.readlines()
+    lines = ['testing a long tweet',' this should get
+    interesting and should generate an',' html file to
+    display the result.  hmmmmm mmmmmmmmmmmmmmmmmmmmm 
+    mmmmmmmmmmmmmmmmmm mmmmmmmmmmmmmm mmmmmmmmmmmm 
+    mmmmmmmmm mmmmmmmmm', ' what a strange tweet...']
+    text = str(random.randint(0, 1000))
     for l in lines:
         text = text + l
     text = text.strip()
@@ -42,15 +48,17 @@ def process_frame(filename, bucket, key):
         print '  > tweet too large.'
 
         print '  > generating html file.'
-        html = '<html><p>' + text.strip(url) + '</p>'
-        html = html + '<a href=\"'+url+'\"></html>'
+        html = '<html><body>'
+        html = html + '<p>' + text.strip(url) + '</p>'
+        html = html + '<img src=\"'+url+'\" alt=\"capture\">'
+        html = html + '</body></html>'
 
         print '  > uploading html to s3'
-        key = bucket.new_key('html/'+filename)
-        key.set_contents_from_string(html)
+        html_key = bucket.new_key('html/'+filename)
+        html_key.set_contents_from_string(html)
         
         print '  > generating new url'
-        text = key.generate_url(600)
+        text = html_key.generate_url(600)
         print '  > ' + text
 
     #Send the tweet!
