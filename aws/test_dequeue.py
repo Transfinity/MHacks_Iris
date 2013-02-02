@@ -14,10 +14,12 @@ while True:
     succ = dequeue_frame(dest_dir)
     if succ:
         print '  > success!'
-        e_delay = e_delay / 2.0
+        if e_delay > 0.001:
+            e_delay = e_delay / 2.0
     else:
         print '  > queue empty! backing off for ',
         print str(e_delay) + ' seconds'
         time.sleep(e_delay)
-        e_delay = e_delay + 0.1
+        if e_delay < 60.0:
+            e_delay = e_delay + 0.1
 
