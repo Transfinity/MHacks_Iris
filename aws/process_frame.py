@@ -54,7 +54,8 @@ def process_frame(filename, bucket, key):
         html = html + '</body></html>'
 
         print '  > uploading html to s3'
-        html_key = bucket.new_key('html/'+filename+'.html')
+        key_uqname = key.name.split('/')[1]
+        html_key = bucket.new_key('html/'+key_uqname+'.html')
         html_key.set_contents_from_string(html)
         
         print '  > generating new url'
