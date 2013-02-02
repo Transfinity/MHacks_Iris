@@ -1,6 +1,6 @@
 import boto
 import simplejson
-from process_image import *
+from process_frame import *
 
 bucket_name = 'mhacks_iris.chris-cole.net'
 queue_name = 'frame_queue'
