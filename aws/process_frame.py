@@ -60,7 +60,7 @@ def process_frame(filename, bucket, key):
         html_key.set_acl('public-read')
         
         print '  > generating new url'
-        text = 'https://s3.amazonaws.com/mhacks_iris/'+html_key.name
+        text = 'Look what I just saw at #mhacks https://s3.amazonaws.com/mhacks_iris/'+html_key.name
         print '  > ' + text
 
     #Send the tweet!
