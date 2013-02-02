@@ -38,7 +38,7 @@ def process_frame(filename, bucket, key):
     #otherwise generate a html file and tweet that
     print '  > found text.'
     print '  > generating tweet.'
-    url = key.generate_url(0)
+    url = 'https://s3.amazon.com/mhacks_iris/'+key.name
     text = text.strip() + ' ' + url
     if len(text) < 140:
         #tweet the line
@@ -58,7 +58,7 @@ def process_frame(filename, bucket, key):
         html_key.set_contents_from_string(html)
         
         print '  > generating new url'
-        text = html_key.generate_url(0)
+        text = 'https://s3.amazon.com/mhacks_iris/'+html_key.name
         print '  > ' + text
 
     #Send the tweet!

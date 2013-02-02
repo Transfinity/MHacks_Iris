@@ -42,8 +42,8 @@ def dequeue_frame(dest_dir):
         key = bucket.get_key(m_data['key'])
 
         #Construct the filename and download the frame from s3
-        filename = dest_dir.strip('/') + '/' + m_data['key'].split('/')[1]
-        key.get_contents_to_filename(filename)
+        local_fname = dest_dir.strip('/') + '/' + m_data['key'].split('/')[1]
+        key.get_contents_to_filename(local_fname)
 
         #Process the frame
         process_frame(filename, bucket, key)
