@@ -38,7 +38,7 @@ def process_frame(filename, bucket, key):
     #otherwise generate a html file and tweet that
     print '  > found text.'
     print '  > generating tweet.'
-    url = key.generate_url(600)
+    url = key.generate_url(0)
     text = text.strip() + ' ' + url
     if len(text) < 140:
         #tweet the line
@@ -54,11 +54,11 @@ def process_frame(filename, bucket, key):
         html = html + '</body></html>'
 
         print '  > uploading html to s3'
-        html_key = bucket.new_key('html/'+filename)
+        html_key = bucket.new_key('html/'+filename+'.html')
         html_key.set_contents_from_string(html)
         
         print '  > generating new url'
-        text = html_key.generate_url(600)
+        text = html_key.generate_url(0)
         print '  > ' + text
 
     #Send the tweet!

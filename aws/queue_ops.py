@@ -2,14 +2,18 @@ import boto
 import simplejson
 from process_frame import *
 
-bucket_name = 'mhacks_iris.chris-cole.net'
+bucket_name = 'mhacks_iris'
 queue_name = 'frame_queue'
 
 def enqueue_frame(filename):
     #Connect to s3 and add the file
     s3 = boto.connect_s3()
     bucket = s3.get_bucket(bucket_name)
-    key = bucket.new_key('raw/'+filename)
+    #create the key name by stripping off the path
+    key_fname = filename.split('/')
+    key_fname = key_fname[len(key_fname)-1]
+    #upload the file to s3
+    key = bucket.new_key('raw/'+key_fname)
     key.set_contents_from_filename(filename)
     key.set_acl('public-read')
 
