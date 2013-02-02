@@ -42,11 +42,11 @@ def dequeue_frame(dest_dir):
         key = bucket.get_key(m_data['key'])
 
         #Construct the filename and download the frame from s3
-        local_fname = dest_dir.strip('/') + '/' + m_data['key'].split('/')[1]
+        local_fname = dest_dir.strip('/') + '/' + key.name.split('/')[1]
         key.get_contents_to_filename(local_fname)
 
         #Process the frame
-        process_frame(filename, bucket, key)
+        process_frame(key.name, bucket, key)
     finally:
         #Remove it from the queue
         #If we crashed on it once, we will
