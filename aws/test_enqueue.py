@@ -2,7 +2,7 @@ import sys
 from queue_ops import *
 
 while True:
-    print 'Input filename:'
+    print 'Input filename:',
     line = sys.stdin.readline().strip()
     if line == 'quit':
         break
