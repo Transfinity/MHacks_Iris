@@ -11,23 +11,57 @@ a_k = fp.readline().strip()
 a_s = fp.readline().strip()
 fp.close()
 
-def process_frame(filename):
+def process_frame(filename, bucket, key):
+    #Open the file
     print '  > processing \'' + filename + '\''
     fp = open(filename, "r")
+
+    #Do OCR on the file
     lines = fp.readlines()
-    if len(lines) == 1:
-        if len(lines[0]) < 140:
-            #tweet the line
-            print '  > tweeting contents:'
-            print '  > \'' + lines[0] + '\''
-            acn = connect_twitter()
-            status=acn.PostUpdates(lines[0].strip())
-            print status
-            if status != None:
-                print '  > success!'
-                print status
-            else:
-                print '  > failure :-('
+    text = ''
+    for l in lines:
+        text = text + l
+    text = text.strip()
+
+    #Ignore the frame if no text found
+    if len(text) == 0:
+        print '  > frame contained no discernable text'
+        return
+
+    #Tweet the contents if possible
+    #otherwise generate a html file and tweet that
+    print '  > found text.'
+    print '  > generating tweet.'
+    url = key.generate_url(600)
+    text = text.strip() + ' ' + url
+    if len(text) < 140:
+        #tweet the line
+        print '  > tweeting:'
+        print '  > \'' + text + '\''
+    else:
+        print '  > tweet too large.'
+
+        print '  > generating html file.'
+        html = '<html><p>' + text.strip(url) + '</p>'
+        html = html + '<a href=\"'+url+'\"></html>'
+
+        print '  > uploading html to s3'
+        key = bucket.new_key('html/'+filename)
+        key.set_contents_from_string(html)
+        
+        print '  > generating new url'
+        text = key.generate_url(600)
+        print '  > ' + text
+
+    #Send the tweet!
+    print '  > tweeting...'
+    acn = connect_twitter()
+    try:
+        status=acn.PostUpdates(text)
+    except:
+        print '  > failure :-('
+        return
+    print '  > success!'
     return
 
 def connect_twitter():
