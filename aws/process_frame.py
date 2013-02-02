@@ -57,6 +57,7 @@ def process_frame(filename, bucket, key):
         key_uqname = key.name.split('/')[1]
         html_key = bucket.new_key('html/'+key_uqname+'.html')
         html_key.set_contents_from_string(html)
+        html_key.set_acl('public-read')
         
         print '  > generating new url'
         text = 'https://s3.amazon.com/mhacks_iris/'+html_key.name
