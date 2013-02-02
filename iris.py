@@ -27,11 +27,28 @@ class Watcher :
         self.font = cv.InitFont(cv.CV_FONT_HERSHEY_PLAIN, 1, 1, 0, 1, 8)
         self.starttime = time.time()
 
-        self.window_name = 'Iris'
-        cv.NamedWindow(self.window_name, cv.CV_WINDOW_AUTOSIZE)
+        self.pupil_window = 'Pupil Tracking'
+        cv.NamedWindow(self.pupil_window, cv.CV_WINDOW_AUTOSIZE)
+        self.white_window = 'White Tracking'
+        cv.NamedWindow(self.white_window, cv.CV_WINDOW_AUTOSIZE)
 
         self.click = (-1,-1)
-        cv.SetMouseCallback(self.window_name, mouse_handler, self)
+        cv.SetMouseCallback(self.pupil_window, mouse_handler, self)
+        cv.SetMouseCallback(self.white_window, mouse_handler, self)
+
+    def handle_keys (self) :
+        c = cv.WaitKey(30)
+        char = chr(c & 0xff)
+        if char == 'p' or char == 'P' :
+            cv.SaveImage('screencap%03d_pupil.png' %(self.screencapid), self.pupil_frame)
+            cv.SaveImage('screencap%03d_white.png' %(self.screencapid), self.white_frame)
+            self.screencapid += 1
+            return True
+
+        if c != -1 :
+            return False
+        else :
+            return True
 
     # pip is the picture in picture, the thing around which we're building a border
     def build_border (self, pip) :
@@ -49,15 +66,9 @@ class Watcher :
 
         return cv.fromarray(border)
 
-
-    def repeat(self) :
-        frame = cv.QueryFrame(self.eyecam)      # frame is an iplimage
-        self.frame_ct += 1
-
-        # Find the pupil
-
+    def find_pupil (self, frame, currenttime) :
         # Preprocess : greyscale, smooth, equalize, threshold
-        grey_frame = cv.CreateImage((frame.width, frame.height), 8, 1)
+        grey_frame = cv.CreateImage(cv.GetSize(frame), 8, 1)
         cv.CvtColor(frame, grey_frame, cv.CV_BGR2GRAY)
 
         cv.Smooth(grey_frame, grey_frame, cv.CV_MEDIAN)
@@ -67,57 +78,81 @@ class Watcher :
         color = 255
         cv.Threshold(grey_frame, grey_frame, threshold, color, cv.CV_THRESH_BINARY)
 
-        #Create images to hold filtered images
-        hsv=cv.CreateImage(cv.GetSize(frame), 8, 3)
-        s_plane=cv.CreateImage(cv.GetSize(frame), 8, 1)
-        #Transform image to HSV colour space.
-        cv.CvtColor(frame, hsv, cv.CV_RGB2HSV)
-        cv.Split(hsv, None, s_plane, None, None)
-        cv.Smooth(s_plane, s_plane, cv.CV_MEDIAN)
-        """ Doesn't seem able to pick out important bits
-        threshold = 50
-        color = 255
-        cv.Threshold(s_plane, s_plane, threshold, color, cv.CV_THRESH_BINARY)
-        """
-        cv.ShowImage("s_plane", s_plane)
+        # Dilate to remove eyebrows
+        element_shape = cv.CV_SHAPE_RECT
+        pos=1
+        element = cv.CreateStructuringElementEx(pos*2+1, pos*2+1, pos, pos, element_shape)
+        cv.Dilate(grey_frame, grey_frame,element, 2)
+        cv.Smooth(grey_frame, grey_frame, cv.CV_MEDIAN)
 
-        final_frame = cv.CreateImage((frame.width, frame.height), 8, 3)
-        cv.CvtColor(grey_frame, final_frame, cv.CV_GRAY2BGR)
-
-        # find pixels w/in a bounding box of the old center
-        # threshold
-
-
-        # Do border stuff
-        border = self.build_border(final_frame)
-        currenttime = time.time() - self.starttime
-        cv.PutText(border,
+        # Give it a border
+        pupil_frame = cv.CreateImage((frame.width, frame.height), 8, 3)
+        cv.CvtColor(grey_frame, pupil_frame, cv.CV_GRAY2BGR)
+        pupil_border = self.build_border(pupil_frame)
+        cv.PutText(pupil_border,
                 'Frame %s - %0.2f seconds - last click (%s, %s)'    \
                         %(self.frame_ct, currenttime, self.click[0], self.click[1]),
                 (10, frame.height+50), self.font, 255)
 
-        #cv.ShowImage(self.window_name, border)
-        c = cv.WaitKey(30)
-        char = chr(c & 0xff)
-        if char == 'p' or char == 'P' :
-            cv.SaveImage('screencap%03d.png' %(self.screencapid), s_plane)
-            self.screencapid += 1
+        cv.ShowImage(self.pupil_window, pupil_border)
+        self.pupil_frame = pupil_frame
 
-        return c
+        return
+
+
+    def find_white (self, frame, currenttime) :
+        #Create images to hold filtered images
+        hsv=cv.CreateImage(cv.GetSize(frame), 8, 3)
+        s_plane=cv.CreateImage(cv.GetSize(frame), 8, 1) # s for saturation
+        #Transform image to HSV colour space.
+        cv.CvtColor(frame, hsv, cv.CV_RGB2HSV)
+        cv.Split(hsv, None, s_plane, None, None)
+        cv.Smooth(s_plane, s_plane, cv.CV_MEDIAN)
+
+        # find pixels w/in a bounding box of the old center
+        # threshold
+        element_shape = cv.CV_SHAPE_RECT
+        pos=1
+        element = cv.CreateStructuringElementEx(pos*2+1, pos*2+1, pos, pos, element_shape)
+        cv.Erode(s_plane, s_plane,element, 2)
+        cv.Smooth(s_plane, s_plane, cv.CV_MEDIAN)
+
+
+        # Do border stuff
+        white_frame = cv.CreateImage((frame.width, frame.height), 8, 3)
+        cv.CvtColor(s_plane, white_frame, cv.CV_GRAY2BGR)
+        white_border = self.build_border(white_frame)
+        cv.PutText(white_border,
+                'Frame %s - %0.2f seconds - last click (%s, %s)'    \
+                        %(self.frame_ct, currenttime, self.click[0], self.click[1]),
+                (10, frame.height+50), self.font, 255)
+
+
+        # Push to screen
+        cv.ShowImage(self.white_window, white_border)
+        self.white_frame = white_frame
+
+        return
+
+
+
+    def repeat(self) :
+        currenttime = time.time() - self.starttime
+        frame = cv.QueryFrame(self.eyecam)      # frame is an iplimage
+        self.frame_ct += 1
+
+        # Find the pupil
+        self.find_pupil(frame, currenttime)
+
+        self.find_white(frame, currenttime)
+
+        # Handle keyboard input
+        return self.handle_keys()
+
 
     def run (self) :
-        while True:
-            c = self.repeat()
-            if c == -1 :
-                continue
-
-            # Grab the char value of c
-            c = chr(c & 0xff)
-            if c == 'p' or c == 'P' or c == 'w' :
-                continue
-            elif c != -1 :
-                print 'got code', c
-                break
+        while self.repeat():
+            pass
 
 
 
