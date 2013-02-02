@@ -29,22 +29,25 @@ def dequeue_frame(dest_dir):
         return False
     m_data = simplejson.loads(m.get_body())
 
-    #Connect to s3
-    s3 = boto.connect_s3()
+    try:
+        #Connect to s3
+        s3 = boto.connect_s3()
 
-    #Decode the queue message
-    bucket = s3.get_bucket(m_data['bucket'])
-    key = bucket.get_key(m_data['key'])
+        #Decode the queue message
+        bucket = s3.get_bucket(m_data['bucket'])
+        key = bucket.get_key(m_data['key'])
 
-    #Construct the filename and download the frame from s3
-    filename = dest_dir.strip('/') + '/' + m_data['key'].split('/')[1]
-    key.get_contents_to_filename(filename)
+        #Construct the filename and download the frame from s3
+        filename = dest_dir.strip('/') + '/' + m_data['key'].split('/')[1]
+        key.get_contents_to_filename(filename)
 
-    #Process the frame
-    process_frame(filename)
-
-    #Remove it from the queue
-    q.delete_message(m) 
+        #Process the frame
+        process_frame(filename, bucket, key)
+    finally:
+        #Remove it from the queue
+        #If we crashed on it once, we will
+        #surely do it again...
+        q.delete_message(m) 
 
     return True
 
