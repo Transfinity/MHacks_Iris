@@ -5,7 +5,7 @@ import numpy as np
 import scipy.stats as stats
 import time
 
-import queue_ops
+import aws.queue_ops
 
 EYE_CAM_ID = 1
 FORWARD_CAM_ID = 2
@@ -48,7 +48,7 @@ class Line_Detector :
             self.y_points[self.pp_index] = point[1]
             self.pp_index += 1
 
-            if self.pp_index = self.pp_max :
+            if self.pp_index == self.pp_max :
                 self.full = True
                 self.pp_index = 0
 
