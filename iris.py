@@ -73,7 +73,16 @@ class Iris :
     def handle_keys (self) :
         c = cv.WaitKey(2)
         char = chr(c & 0xff)
-        if char == 'p' or char == 'P' :
+        if char == 'h' or char == 'H' or char =='?' :
+            print 'Iris key bindings:'
+            print 'p\tSave current image'
+            print 'c\tFake a line event (post a frame to AWS)'
+            print 'e\tEvaporate line event cooldown'
+            print 's\tSwap camera feeds'
+            print 'h\tDisplay this help'
+            print 'q\tQuit'
+
+        elif char == 'p' or char == 'P' :
             cv.SaveImage('screencap%03d_pupil.png' %(self.screencapid), self.pupil_frame)
             cv.SaveImage('screencap%03d_white.png' %(self.screencapid), self.white_frame)
             self.screencapid += 1
@@ -84,7 +93,7 @@ class Iris :
             self.last_frame_sent = to_send
             if self.enable_aws :
                 aws_thread = threading.Thread(target=send_to_aws,
-                        args=(to_send, time.time() - self.start_time))
+                        args=(to_send, time.time() - self.starttime))
                 aws_thread.daemon = True
                 aws_thread.start()
 
@@ -95,7 +104,12 @@ class Iris :
             self.eyecam = self.forwardcam
             self.forwardcam = temp
 
-        elif c != -1 :
+        elif char == 'e' or char == 'E' :
+            print 'Evaporating cooldown'
+            self.line_tracker.evaporate_cooldown()
+
+        elif char == 'q' or char == 'Q' :
+            print 'Thank you for using Iris'
             return False
 
         return True

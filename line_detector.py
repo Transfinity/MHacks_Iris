@@ -15,7 +15,7 @@ class Line_Detector :
         self.pp_max = 20
         self.full = False
         self.last_line_time = 0
-        self.min_line_time = 5
+        self.min_line_time = 30
         self.last_sequence = []
 
     def add_point (self, point) :
@@ -39,7 +39,7 @@ class Line_Detector :
             # We want more horizontal movement than vertical
             delta_x = abs(self.x_points.max() - self.x_points.min())
             delta_y = abs(self.y_points.max() - self.y_points.min())
-            if delta_y > delta_x * self.min_xy_ratio and delta_x > self.min_line_width :
+            if delta_x > delta_y * self.min_xy_ratio and delta_x > self.min_line_width :
                 return False
 
             # Make sure that the points fall in a line
@@ -47,7 +47,7 @@ class Line_Detector :
             if abs(corrcoef) > self.pearson_threshold :
                 currenttime = time.time()
                 if currenttime - self.last_line_time > self.min_line_time :
-                    print 'Firing line read event!'
+                    print 'Firing line read event! dy', delta_y, 'dx', delta_x
                     self.last_line_time = currenttime
                     self.last_sequence = []
                     for index in range(0, len(self.x_points)) :
@@ -76,4 +76,7 @@ class Line_Detector :
 
     def reset_timer (self) :
         self.last_line_time = time.time()
+
+    def evaporate_cooldown (self) :
+        self.last_line_time = 0
 
