@@ -3,7 +3,18 @@ import boto
 import simplejson
 import twitter
 import random
+import cv
+import sys
+import time
+import Image
+import subprocess
+import util
+import errors
 
+tesseract_exe_name = 'tesseract' # Name of executable to be called at command line
+scratch_image_name = "temp.bmp" # This file must be .bmp or other Tesseract-compatible format
+scratch_text_name_root = "temp" # Leave out the .txt extension
+cleanup_scratch_flag = True  # Temporary files cleaned up after OCR operation
 cfg_fname = os.environ['HOME']+'/.twit.cfg'
 fp = open(cfg_fname, 'r')
 c_k = fp.readline().strip()
@@ -16,17 +27,18 @@ def process_frame(filename, bucket, key):
     #Open the file
     print '  > processing \'' + filename + '\''
     #fp = open(filename, "r")
+    #lines = fp.readlines()
+    #lines = ['testing a long tweet',' this should get',
+    #'interesting and should generate an',' html file to',
+    #'display the result.  hmmmmm mmmmmmmmmmmmmmmmmmmmm ',
+    #'mmmmmmmmmmmmmmmmmm mmmmmmmmmmmmmm mmmmmmmmmmmm ',
+    #'mmmmmmmmm mmmmmmmmm', ' what a strange tweet...']
+    #text = str(random.randint(0, 1000))
+    #for l in lines:
+        #text = text + l
 
     #Do OCR on the file
-    #lines = fp.readlines()
-    lines = ['testing a long tweet',' this should get',
-    'interesting and should generate an',' html file to',
-    'display the result.  hmmmmm mmmmmmmmmmmmmmmmmmmmm ',
-    'mmmmmmmmmmmmmmmmmm mmmmmmmmmmmmmm mmmmmmmmmmmm ',
-    'mmmmmmmmm mmmmmmmmm', ' what a strange tweet...']
-    text = str(random.randint(0, 1000))
-    for l in lines:
-        text = text + l
+    text = image_file_to_string(filename, graceful_errors=True);
     text = text.strip()
 
     #Ignore the frame if no text found
@@ -82,3 +94,43 @@ def connect_twitter():
             access_token_secret=a_s)
     
     return acn
+
+def call_tesseract(input_filename, output_filename):
+    """Calls external tesseract.exe on input file (restrictions on types),
+    outputting output_filename+'txt'"""
+    args = [tesseract_exe_name, input_filename, output_filename]
+    proc = subprocess.Popen(args)
+    retcode = proc.wait()
+    if retcode!=0:
+        errors.check_for_errors()
+
+def image_to_string(im, cleanup = cleanup_scratch_flag):
+    """Converts im to file, applies tesseract, and fetches resulting text.
+    If cleanup=True, delete scratch files after operation."""
+    try:
+        util.image_to_scratch(im, scratch_image_name)
+        call_tesseract(scratch_image_name, scratch_text_name_root)
+        text = util.retrieve_text(scratch_text_name_root)
+    finally:
+        if cleanup:
+            util.perform_cleanup(scratch_image_name, scratch_text_name_root)
+    return text
+
+def image_file_to_string(filename, cleanup = cleanup_scratch_flag, graceful_errors=True):
+    """Applies tesseract to filename; or, if image is incompatible and graceful_errors=True,
+    converts to compatible format and then applies tesseract.  Fetches resulting text.
+    If cleanup=True, delete scratch files after operation."""
+    try:
+        try:
+            call_tesseract(filename, scratch_text_name_root)
+            text = util.retrieve_text(scratch_text_name_root)
+        except errors.Tesser_General_Exception:
+            if graceful_errors:
+                im = Image.open(filename)
+                text = image_to_string(im, cleanup)
+            else:
+                raise
+    finally:
+        if cleanup:
+            util.perform_cleanup(scratch_image_name, scratch_text_name_root)
+    return text
