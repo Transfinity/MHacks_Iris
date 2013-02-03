@@ -4,6 +4,8 @@ import math
 import numpy as np
 import time
 
+CAMERA_ID = 1
+
 # Takes array, array, (y,x)
 def blit(dest, src, loc) :
     h_max = src.height + loc[0]
@@ -30,7 +32,7 @@ class Watcher :
     def __init__ (self) :
         self.frame_ct = 0
         self.screencapid = 0
-        self.eyecam = cv.CaptureFromCAM(1)
+        self.eyecam = cv.CaptureFromCAM(CAMERA_ID)
         self.font = cv.InitFont(cv.CV_FONT_HERSHEY_PLAIN, 1, 1, 0, 1, 8)
         self.starttime = time.time()
 
@@ -50,6 +52,8 @@ class Watcher :
         lowerright = (3*self.frame_size[0]/4, 3*self.frame_size[1]/4)
         self.bounding_box = (upperleft, lowerright)
         print 'Bounding box from', upperleft, 'to', lowerright
+        self.prev_bound_size = self.frame_size[0]/4
+        self.center_bound_box = True
 
         cv.MoveWindow(self.pupil_window, 0, 0)
         cv.MoveWindow(self.white_window, sample_frame.width + 32, 0)
@@ -62,22 +66,44 @@ class Watcher :
             cv.SaveImage('screencap%03d_pupil.png' %(self.screencapid), self.pupil_frame)
             cv.SaveImage('screencap%03d_white.png' %(self.screencapid), self.white_frame)
             self.screencapid += 1
-            return True
 
-        if c != -1 :
+        elif char == 'c' or char == 'C' :
+            print 'Toggling bound box'
+            self.center_bound_box = not self.center_bound_box
+
+        elif c != -1 :
             return False
-        else :
-            return True
 
-    def build_bounding_box(self, center, dist) :
-        min_dist = 20
-        dist = max(min_dist, dist)
-        x = int(max(center[0] - dist, 0))
-        y = int(max(center[1] - dist, 0))
+        return True
+
+    def build_default_bb(self) :
+        upperleft = (self.frame_size[0]/4, self.frame_size[1]/4)
+        lowerright = (3*self.frame_size[0]/4, 3*self.frame_size[1]/4)
+        self.bounding_box = (upperleft, lowerright)
+
+    def build_bounding_box(self, center, growth) :
+        if self.center_bound_box :
+            return self.build_default_bb()
+
+        # Bounds on how big/small the box can get
+        min_bb_size = 20
+        max_bb_size = self.frame_size[0]/3
+
+        if growth > 0 :
+            bb_size = self.prev_bound_size * 1.05
+        elif growth < 0 :
+            bb_size = self.prev_bound_size * .95
+        else :
+            bb_size = self.prev_bound_size
+
+        bb_size = max(min_bb_size, bb_size)
+        bb_size = min(max_bb_size, bb_size)
+        x = int(max(center[0] - bb_size, 0))
+        y = int(max(center[1] - bb_size, 0))
         upperleft = (x, y)
 
-        x = int(min(center[0] + dist, self.frame_size[0]))
-        y = int(min(center[1] + dist, self.frame_size[1]))
+        x = int(min(center[0] + bb_size, self.frame_size[0]))
+        y = int(min(center[1] + bb_size, self.frame_size[1]))
         lowerright = (x, y)
 
         self.bounding_box = (upperleft, lowerright)
@@ -135,7 +161,7 @@ class Watcher :
         avg_x = 0.0
         avg_y = 0.0
         for pix in dist_pix :
-            if pix[0] < dist_avg + 1.5 * dist_std :
+            if pix[0] < dist_avg + 1 * dist_std :
                 trimmed_pix.append(pix[1])
                 avg_x += pix[1][0]
                 avg_y += pix[1][1]
@@ -145,15 +171,21 @@ class Watcher :
         avg_y = int(avg_y / len(trimmed_pix))
         trimmed_center = (avg_x, avg_y)
 
+        # We want to stabilize at around 93%
         trim_ratio = 1.0 * len(trimmed_pix) / len(dark_pix)
-        if trim_ratio > .8 :
-            bb_growth = 2
-        else :
+        print 'Trim ratio:', trim_ratio
+        if trim_ratio > .90 :
             bb_growth = 1
+        elif trim_ratio < .80 :
+            bb_growth = -1
+        else :
+            bb_growth = 0
 
-        self.build_bounding_box(trimmed_center, 3 * dist_std * bb_growth)
+        self.build_bounding_box(trimmed_center, bb_growth)
 
         return trimmed_center
+
+
 
 
     def find_pupil (self, frame, currenttime) :
@@ -195,7 +227,7 @@ class Watcher :
         cv.ShowImage(self.pupil_window, pupil_border)
         self.pupil_frame = pupil_frame
 
-        return
+        return center
 
 
     def find_white (self, frame, currenttime) :
@@ -227,7 +259,7 @@ class Watcher :
 
 
         # Push to screen
-        cv.ShowImage(self.white_window, white_border)
+        #cv.ShowImage(self.white_window, white_border)
         self.white_frame = white_frame
 
         return
@@ -240,9 +272,10 @@ class Watcher :
         self.frame_ct += 1
 
         # Find the pupil
-        self.find_pupil(frame, currenttime)
+        pupil_center = self.find_pupil(frame, currenttime)
 
-        self.find_white(frame, currenttime)
+        #self.find_white(frame, currenttime)
+        cv.ShowImage(self.white_window, frame)
 
         # Handle keyboard input
         return self.handle_keys()
