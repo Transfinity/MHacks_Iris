@@ -1,5 +1,6 @@
 #!/usr/bin/python
 import cv
+import math
 import numpy as np
 import time
 
@@ -19,11 +20,17 @@ def mouse_handler (event, x, y, flags, eyeon) :
     if event == cv.CV_EVENT_LBUTTONDOWN :
         eyeon.click = (y,x)
 
+def traverse(seq):
+    while seq:
+        print list(seq)
+        traverse(seq.v_next()) # Recurse on children
+        seq = seq.h_next() # Next sibling
+
 class Watcher :
     def __init__ (self) :
         self.frame_ct = 0
         self.screencapid = 0
-        self.eyecam = cv.CaptureFromCAM(0)
+        self.eyecam = cv.CaptureFromCAM(1)
         self.font = cv.InitFont(cv.CV_FONT_HERSHEY_PLAIN, 1, 1, 0, 1, 8)
         self.starttime = time.time()
 
@@ -36,8 +43,20 @@ class Watcher :
         cv.SetMouseCallback(self.pupil_window, mouse_handler, self)
         cv.SetMouseCallback(self.white_window, mouse_handler, self)
 
+        # Build an inital bounding box for the eye
+        sample_frame = cv.QueryFrame(self.eyecam)
+        self.frame_size = cv.GetSize(sample_frame)
+        upperleft = (self.frame_size[0]/4, self.frame_size[1]/4)
+        lowerright = (3*self.frame_size[0]/4, 3*self.frame_size[1]/4)
+        self.bounding_box = (upperleft, lowerright)
+        print 'Bounding box from', upperleft, 'to', lowerright
+
+        cv.MoveWindow(self.pupil_window, 0, 0)
+        cv.MoveWindow(self.white_window, sample_frame.width + 32, 0)
+
+
     def handle_keys (self) :
-        c = cv.WaitKey(30)
+        c = cv.WaitKey(2)
         char = chr(c & 0xff)
         if char == 'p' or char == 'P' :
             cv.SaveImage('screencap%03d_pupil.png' %(self.screencapid), self.pupil_frame)
@@ -49,6 +68,20 @@ class Watcher :
             return False
         else :
             return True
+
+    def build_bounding_box(self, center, dist) :
+        min_dist = 20
+        dist = max(min_dist, dist)
+        x = int(max(center[0] - dist, 0))
+        y = int(max(center[1] - dist, 0))
+        upperleft = (x, y)
+
+        x = int(min(center[0] + dist, self.frame_size[0]))
+        y = int(min(center[1] + dist, self.frame_size[1]))
+        lowerright = (x, y)
+
+        self.bounding_box = (upperleft, lowerright)
+
 
     # pip is the picture in picture, the thing around which we're building a border
     def build_border (self, pip) :
@@ -65,6 +98,63 @@ class Watcher :
         blit(border, cv.GetMat(pip), pip_loc)
 
         return cv.fromarray(border)
+
+    def handle_dark_pixels (self, grey_frame) :
+        # TODO: optimize?
+        # Track black pixels within the bounding box, and compute the average
+        dark_pix = []
+        avg_x = 0.0
+        avg_y = 0.0
+        for y in range(self.bounding_box[0][1], self.bounding_box[1][1]) :
+            for x in range(self.bounding_box[0][0], self.bounding_box[1][0]) :
+                if grey_frame[y, x] < 100 :
+                    dark_pix.append((x, y))
+                    avg_x += x
+                    avg_y += y
+
+        if len(dark_pix) == 0 :
+            return (42, 42)
+
+        avg_x = int(avg_x / len(dark_pix))
+        avg_y = int(avg_y / len(dark_pix))
+        center = (avg_x, avg_y)
+
+        distances = []
+        dist_pix = []
+        for pix in dark_pix :
+            dist = math.sqrt((center[0] - pix[0]) ** 2 + (center[1] - center[1]) ** 2)
+            distances.append(dist)
+            dist_pix.append((dist, pix))
+
+        distances = np.array(distances)
+
+        dist_std = np.std(distances)
+        dist_avg = np.mean(distances)
+
+        trimmed_pix = []
+        avg_x = 0.0
+        avg_y = 0.0
+        for pix in dist_pix :
+            if pix[0] < dist_avg + 1.5 * dist_std :
+                trimmed_pix.append(pix[1])
+                avg_x += pix[1][0]
+                avg_y += pix[1][1]
+        if len(trimmed_pix) == 0 :
+            return (42, 42)
+        avg_x = int(avg_x / len(trimmed_pix))
+        avg_y = int(avg_y / len(trimmed_pix))
+        trimmed_center = (avg_x, avg_y)
+
+        trim_ratio = 1.0 * len(trimmed_pix) / len(dark_pix)
+        if trim_ratio > .8 :
+            bb_growth = 2
+        else :
+            bb_growth = 1
+
+        self.build_bounding_box(trimmed_center, 3 * dist_std * bb_growth)
+
+        return trimmed_center
+
 
     def find_pupil (self, frame, currenttime) :
         # Preprocess : greyscale, smooth, equalize, threshold
@@ -85,9 +175,17 @@ class Watcher :
         cv.Dilate(grey_frame, grey_frame,element, 2)
         cv.Smooth(grey_frame, grey_frame, cv.CV_MEDIAN)
 
+        # Track black pixels within the bounding box, and compute the average
+        center = self.handle_dark_pixels(grey_frame)
+
         # Give it a border
         pupil_frame = cv.CreateImage((frame.width, frame.height), 8, 3)
         cv.CvtColor(grey_frame, pupil_frame, cv.CV_GRAY2BGR)
+
+        cv.Circle(pupil_frame, center, 4, cv.CV_RGB(255, 0, 0), cv.CV_FILLED)
+        cv.Rectangle(pupil_frame, self.bounding_box[0],
+                self.bounding_box[1], cv.CV_RGB(0,255,0))
+
         pupil_border = self.build_border(pupil_frame)
         cv.PutText(pupil_border,
                 'Frame %s - %0.2f seconds - last click (%s, %s)'    \
