@@ -3,9 +3,12 @@ import cv
 import math
 import numpy as np
 import scipy.stats as stats
+import threading
 import time
 
-import aws.queue_ops
+from optparse import OptionParser
+
+import aws.queue_ops as qo
 
 EYE_CAM_ID = 1
 FORWARD_CAM_ID = 2
@@ -22,18 +25,16 @@ def blit(dest, src, loc) :
     dest[loc[0]:h_max, loc[1]:w_max] = src
     return
 
-def mouse_handler (event, x, y, flags, eyeon) :
-    if event == cv.CV_EVENT_LBUTTONDOWN :
-        eyeon.click = (y,x)
-
-def traverse(seq):
-    while seq:
-        print list(seq)
-        traverse(seq.v_next()) # Recurse on children
-        seq = seq.h_next() # Next sibling
+def send_to_aws (forwardcam, currenttime) :
+    # Send image to the aws server
+    filename = '%0.2f.png' %currenttime
+    cv.SaveImage(filename, cv.QueryFrame(forwardcam))
+    qo.enqueue_frame(filename)
 
 class Line_Detector :
-    def __init__ () :
+    def __init__ (self) :
+        self.pearson_threshold = 0.9
+        self.min_xy_ratio = 3
         self.x_points = np.zeros(20)
         self.y_points = np.zeros(20)
         self.pp_index = 0
@@ -41,6 +42,7 @@ class Line_Detector :
         self.full = False
         self.last_line_time = 0
         self.min_line_time = 5
+        self.last_sequence = []
 
     def add_point (self, point) :
         if self.full == False :
@@ -52,7 +54,7 @@ class Line_Detector :
                 self.full = True
                 self.pp_index = 0
 
-            return None
+            return False
 
         else :
             self.x_points[self.pp_index] = point[0]
@@ -60,21 +62,46 @@ class Line_Detector :
             self.pp_index += 1
             self.pp_index %= self.pp_max
 
-            correlation = stats.pearsonr(x_points, y_points)
-            print 'Correlation for last second:', correlation
-            if abs(correlation) > .8 :
-                print 'Line read event detected!'
+            # We want more horizontal movement than vertical
+            delta_x = abs(self.x_points.max() - self.x_points.min())
+            delta_y = abs(self.y_points.max() - self.y_points.min())
+            if delta_y > delta_x * self.min_xy_ratio :
+                return False
+
+            # Make sure that the points fall in a line
+            corrcoef, p_val = stats.pearsonr(self.x_points, self.y_points)
+            if abs(corrcoef) > self.pearson_threshold :
                 currenttime = time.time()
                 if currenttime - self.last_line_time > self.min_line_time :
                     print 'Firing line read event!'
-                    return x_points, y_points
+                    self.last_line_time = currenttime
+                    self.last_sequence = []
+                    for index in range(0, len(self.x_points)) :
+                        point = (int(self.x_points[index]), int(self.y_points[index]))
+                        self.last_sequence.append(point)
+                    return True
 
-        return None
+        return False
+
+    def get_last_sequence (self) :
+        if self.full == False :
+            return []
+
+        currenttime = time.time()
+        if currenttime - self.last_line_time < 1 :
+            return self.last_sequence
+        else :
+            return []
+
+    def reset_timer (self) :
+        self.last_line_time = time.time()
 
 
+class Iris :
+    def __init__ (self, enable_aws, enable_draw) :
+        self.enable_aws = enable_aws
+        self.enable_draw = enable_draw
 
-class Watcher :
-    def __init__ (self) :
         self.frame_ct = 0
         self.screencapid = 0
         self.eyecam = cv.CaptureFromCAM(EYE_CAM_ID)
@@ -83,29 +110,25 @@ class Watcher :
         self.starttime = time.time()
         self.previoustime = 0
 
-        self.pupil_window = 'Pupil Tracking'
-        cv.NamedWindow(self.pupil_window, cv.CV_WINDOW_AUTOSIZE)
-        self.white_window = 'White Tracking'
-        cv.NamedWindow(self.white_window, cv.CV_WINDOW_AUTOSIZE)
-
-        self.click = (-1,-1)
-        cv.SetMouseCallback(self.pupil_window, mouse_handler, self)
-        cv.SetMouseCallback(self.white_window, mouse_handler, self)
+        if self.enable_draw :
+            self.eyecam_post = 'Eyecam Robovision'
+            cv.NamedWindow(self.eyecam_post, cv.CV_WINDOW_AUTOSIZE)
+            self.eyecam_raw = 'Eyecam Raw'
+            cv.NamedWindow(self.eyecam_raw, cv.CV_WINDOW_AUTOSIZE)
+            self.forward_window = 'Forward Vision'
+            cv.NamedWindow(self.forward_window, cv.CV_WINDOW_AUTOSIZE)
 
         # Build an inital bounding box for the eye
         sample_frame = cv.QueryFrame(self.eyecam)
         self.frame_size = cv.GetSize(sample_frame)
-        upperleft = (self.frame_size[0]/4, self.frame_size[1]/4)
-        lowerright = (3*self.frame_size[0]/4, 3*self.frame_size[1]/4)
-        self.bounding_box = (upperleft, lowerright)
-        print 'Bounding box from', upperleft, 'to', lowerright
-        self.prev_bound_size = self.frame_size[0]/4
-        self.center_bound_box = True
+        self.build_default_bb()
 
         self.line_tracker = Line_Detector()
 
-        cv.MoveWindow(self.pupil_window, 0, 0)
-        cv.MoveWindow(self.white_window, sample_frame.width + 32, 0)
+        if self.enable_draw :
+            cv.MoveWindow(self.eyecam_post, 0, 0)
+            cv.MoveWindow(self.eyecam_raw, sample_frame.width + 32, 0)
+            cv.MoveWindow(self.forward_window, sample_frame.width + 32, sample_frame.height + 32)
 
 
     def handle_keys (self) :
@@ -117,8 +140,21 @@ class Watcher :
             self.screencapid += 1
 
         elif char == 'c' or char == 'C' :
-            print 'Toggling bound box'
-            self.center_bound_box = not self.center_bound_box
+            if self.enable_aws :
+                print 'Faking a line event'
+                aws_thread = threading.Thread(target=send_to_aws,
+                        args=(self.forwardcam, time.time() - self.start_time))
+                aws_thread.daemon = True
+                aws_thread.start()
+            else :
+                return False
+
+        elif char == 's' or char == 'S' :
+            print 'Switching camera feeds'
+            self.line_tracker.reset_timer()
+            temp = self.eyecam
+            self.eyecam = self.forwardcam
+            self.forwardcam = temp
 
         elif c != -1 :
             return False
@@ -128,33 +164,6 @@ class Watcher :
     def build_default_bb(self) :
         upperleft = (self.frame_size[0]/4, self.frame_size[1]/4)
         lowerright = (3*self.frame_size[0]/4, 3*self.frame_size[1]/4)
-        self.bounding_box = (upperleft, lowerright)
-
-    def build_bounding_box(self, center, growth) :
-        if self.center_bound_box :
-            return self.build_default_bb()
-
-        # Bounds on how big/small the box can get
-        min_bb_size = 20
-        max_bb_size = self.frame_size[0]/3
-
-        if growth > 0 :
-            bb_size = self.prev_bound_size * 1.05
-        elif growth < 0 :
-            bb_size = self.prev_bound_size * .95
-        else :
-            bb_size = self.prev_bound_size
-
-        bb_size = max(min_bb_size, bb_size)
-        bb_size = min(max_bb_size, bb_size)
-        x = int(max(center[0] - bb_size, 0))
-        y = int(max(center[1] - bb_size, 0))
-        upperleft = (x, y)
-
-        x = int(min(center[0] + bb_size, self.frame_size[0]))
-        y = int(min(center[1] + bb_size, self.frame_size[1]))
-        lowerright = (x, y)
-
         self.bounding_box = (upperleft, lowerright)
 
 
@@ -220,21 +229,7 @@ class Watcher :
         avg_y = int(avg_y / len(trimmed_pix))
         trimmed_center = (avg_x, avg_y)
 
-        # We want to stabilize at around 93%
-        trim_ratio = 1.0 * len(trimmed_pix) / len(dark_pix)
-        print 'Trim ratio:', trim_ratio
-        if trim_ratio > .90 :
-            bb_growth = 1
-        elif trim_ratio < .80 :
-            bb_growth = -1
-        else :
-            bb_growth = 0
-
-        self.build_bounding_box(trimmed_center, bb_growth)
-
         return trimmed_center
-
-
 
 
     def find_pupil (self, frame, currenttime) :
@@ -245,13 +240,13 @@ class Watcher :
         cv.Smooth(grey_frame, grey_frame, cv.CV_MEDIAN)
         cv.EqualizeHist(grey_frame, grey_frame)
 
-        threshold = 20
+        threshold = 30
         color = 255
         cv.Threshold(grey_frame, grey_frame, threshold, color, cv.CV_THRESH_BINARY)
 
         # Dilate to remove eyebrows
         element_shape = cv.CV_SHAPE_RECT
-        pos=1
+        pos = 1
         element = cv.CreateStructuringElementEx(pos*2+1, pos*2+1, pos, pos, element_shape)
         cv.Dilate(grey_frame, grey_frame,element, 2)
         cv.Smooth(grey_frame, grey_frame, cv.CV_MEDIAN)
@@ -265,69 +260,35 @@ class Watcher :
 
         # See if we've found a line-event
         if currenttime - self.previoustime > .05 :
-            result = self.line_tracker.add_point(pupil_center)
-            if result is not None :
-                x_points = result[0]
-                y_points = result[1]
-                for index in range(0, len(x_points)) :
-                    point = (x_points[index], y_points[index])
-                    cv.Circle(pupil_frame, point, 2, cv.CV_RGB(255, 0, 0))
+            event_detected = self.line_tracker.add_point(center)
+            if event_detected :
+                print 'Detected line event at %0.2f' %currenttime
+                if self.enable_aws :
+                    aws_thread = threading.Thread(target=send_to_aws,
+                            args=(self.forwardcam,currenttime))
+                    aws_thread.daemon = True
+                    aws_thread.start()
 
-                # Send image to the aws server
-                filename = '%0.2f.png' %currenttime
-                cv.SaveImage(filename, cv.QuerryFrame(self.forwardcam))
-                queue_ops.enqueue_frame(filename)
+        if self.enable_draw :
+            # Draw robovision elements
 
-        # Give it a border
-        cv.Circle(pupil_frame, center, 4, cv.CV_RGB(255, 0, 0), cv.CV_FILLED)
-        cv.Rectangle(pupil_frame, self.bounding_box[0],
-                self.bounding_box[1], cv.CV_RGB(0,255,0))
+            # Mark the sequence of points that triggered the last line event
+            for point in self.line_tracker.get_last_sequence() :
+                cv.Circle(pupil_frame, point, 3, cv.CV_RGB(255, 0, 255))
 
-        pupil_border = self.build_border(pupil_frame)
-        cv.PutText(pupil_border,
-                'Frame %s - %0.2f seconds - last click (%s, %s)'    \
-                        %(self.frame_ct, currenttime, self.click[0], self.click[1]),
-                (10, frame.height+50), self.font, 255)
+            # Circle the center of the pupil
+            cv.Circle(pupil_frame, center, 4, cv.CV_RGB(255, 0, 0), cv.CV_FILLED)
 
-        cv.ShowImage(self.pupil_window, pupil_border)
-        self.pupil_frame = pupil_frame
+            # Give it a border
+            cv.Rectangle(pupil_frame, self.bounding_box[0],
+                    self.bounding_box[1], cv.CV_RGB(0,255,0))
 
-        return center
+            pupil_border = self.build_border(pupil_frame)
+            cv.PutText(pupil_border,
+                    'Frame %s - %0.2f seconds' %(self.frame_ct, currenttime),
+                    (10, frame.height+50), self.font, 255)
 
-
-    def find_white (self, frame, currenttime) :
-        #Create images to hold filtered images
-        hsv=cv.CreateImage(cv.GetSize(frame), 8, 3)
-        s_plane=cv.CreateImage(cv.GetSize(frame), 8, 1) # s for saturation
-        #Transform image to HSV colour space.
-        cv.CvtColor(frame, hsv, cv.CV_RGB2HSV)
-        cv.Split(hsv, None, s_plane, None, None)
-        cv.Smooth(s_plane, s_plane, cv.CV_MEDIAN)
-
-        # find pixels w/in a bounding box of the old center
-        # threshold
-        element_shape = cv.CV_SHAPE_RECT
-        pos=1
-        element = cv.CreateStructuringElementEx(pos*2+1, pos*2+1, pos, pos, element_shape)
-        cv.Erode(s_plane, s_plane,element, 2)
-        cv.Smooth(s_plane, s_plane, cv.CV_MEDIAN)
-
-
-        # Do border stuff
-        white_frame = cv.CreateImage((frame.width, frame.height), 8, 3)
-        cv.CvtColor(s_plane, white_frame, cv.CV_GRAY2BGR)
-        white_border = self.build_border(white_frame)
-        cv.PutText(white_border,
-                'Frame %s - %0.2f seconds - last click (%s, %s)'    \
-                        %(self.frame_ct, currenttime, self.click[0], self.click[1]),
-                (10, frame.height+50), self.font, 255)
-
-
-        # Push to screen
-        #cv.ShowImage(self.white_window, white_border)
-        self.white_frame = white_frame
-
-        return
+            cv.ShowImage(self.eyecam_post, pupil_border)
 
 
     def repeat(self) :
@@ -336,10 +297,14 @@ class Watcher :
         self.frame_ct += 1
 
         # Find the pupil
-        pupil_center = self.find_pupil(frame, currenttime)
+        self.find_pupil(frame, currenttime)
 
-        #self.find_white(frame, currenttime)
-        cv.ShowImage(self.white_window, frame)
+        if self.enable_draw :
+            cv.Rectangle(frame, self.bounding_box[0],
+                    self.bounding_box[1], cv.CV_RGB(0,255,0))
+            cv.ShowImage(self.eyecam_raw, frame)
+
+            cv.ShowImage(self.forward_window, cv.QueryFrame(self.forwardcam))
 
         self.previoustime = currenttime
         # Handle keyboard input
@@ -351,6 +316,18 @@ class Watcher :
             pass
 
 
+def main () :
+    parser = OptionParser()
+    parser.add_option('-a', '--aws',
+            action='store_false', dest='enable_aws', default=True,
+            help='disable pushing caputred images to aws')
+    parser.add_option('-d', '--display',
+            action='store_true', dest='enable_draw', default=False,
+            help='enable graphical display')
+    (options, arguments) = parser.parse_args()
 
-eyeon = Watcher()
-eyeon.run()
+    iris = Iris(options.enable_aws, options.enable_draw)
+    iris.run()
+
+if __name__ == '__main__' :
+    main()
