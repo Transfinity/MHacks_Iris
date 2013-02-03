@@ -26,16 +26,6 @@ fp.close()
 def process_frame(filename, bucket, key):
     #Open the file
     print '  > processing \'' + filename + '\''
-    #fp = open(filename, "r")
-    #lines = fp.readlines()
-    #lines = ['testing a long tweet',' this should get',
-    #'interesting and should generate an',' html file to',
-    #'display the result.  hmmmmm mmmmmmmmmmmmmmmmmmmmm ',
-    #'mmmmmmmmmmmmmmmmmm mmmmmmmmmmmmmm mmmmmmmmmmmm ',
-    #'mmmmmmmmm mmmmmmmmm', ' what a strange tweet...']
-    #text = str(random.randint(0, 1000))
-    #for l in lines:
-        #text = text + l
 
     #Do OCR on the file
     text = image_file_to_string(filename, graceful_errors=True);
