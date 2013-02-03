@@ -2,9 +2,13 @@
 import cv
 import math
 import numpy as np
+import scipy.stats as stats
 import time
 
-CAMERA_ID = 1
+import queue_ops
+
+EYE_CAM_ID = 1
+FORWARD_CAM_ID = 2
 
 # Takes array, array, (y,x)
 def blit(dest, src, loc) :
@@ -28,13 +32,56 @@ def traverse(seq):
         traverse(seq.v_next()) # Recurse on children
         seq = seq.h_next() # Next sibling
 
+class Line_Detector :
+    def __init__ () :
+        self.x_points = np.zeros(20)
+        self.y_points = np.zeros(20)
+        self.pp_index = 0
+        self.pp_max = 20
+        self.full = False
+        self.last_line_time = 0
+        self.min_line_time = 5
+
+    def add_point (self, point) :
+        if self.full == False :
+            self.x_points[self.pp_index] = point[0]
+            self.y_points[self.pp_index] = point[1]
+            self.pp_index += 1
+
+            if self.pp_index = self.pp_max :
+                self.full = True
+                self.pp_index = 0
+
+            return None
+
+        else :
+            self.x_points[self.pp_index] = point[0]
+            self.y_points[self.pp_index] = point[1]
+            self.pp_index += 1
+            self.pp_index %= self.pp_max
+
+            correlation = stats.pearsonr(x_points, y_points)
+            print 'Correlation for last second:', correlation
+            if abs(correlation) > .8 :
+                print 'Line read event detected!'
+                currenttime = time.time()
+                if currenttime - self.last_line_time > self.min_line_time :
+                    print 'Firing line read event!'
+                    return x_points, y_points
+
+        return None
+
+
+
 class Watcher :
     def __init__ (self) :
         self.frame_ct = 0
         self.screencapid = 0
-        self.eyecam = cv.CaptureFromCAM(CAMERA_ID)
+        self.eyecam = cv.CaptureFromCAM(EYE_CAM_ID)
+        self.forwardcam = cv.CaptureFromCAM(FORWARD_CAM_ID)
         self.font = cv.InitFont(cv.CV_FONT_HERSHEY_PLAIN, 1, 1, 0, 1, 8)
         self.starttime = time.time()
+        self.previoustime = 0
 
         self.pupil_window = 'Pupil Tracking'
         cv.NamedWindow(self.pupil_window, cv.CV_WINDOW_AUTOSIZE)
@@ -54,6 +101,8 @@ class Watcher :
         print 'Bounding box from', upperleft, 'to', lowerright
         self.prev_bound_size = self.frame_size[0]/4
         self.center_bound_box = True
+
+        self.line_tracker = Line_Detector()
 
         cv.MoveWindow(self.pupil_window, 0, 0)
         cv.MoveWindow(self.white_window, sample_frame.width + 32, 0)
@@ -210,10 +259,26 @@ class Watcher :
         # Track black pixels within the bounding box, and compute the average
         center = self.handle_dark_pixels(grey_frame)
 
-        # Give it a border
+        # Go to color
         pupil_frame = cv.CreateImage((frame.width, frame.height), 8, 3)
         cv.CvtColor(grey_frame, pupil_frame, cv.CV_GRAY2BGR)
 
+        # See if we've found a line-event
+        if currenttime - self.previoustime > .05 :
+            result = self.line_tracker.add_point(pupil_center)
+            if result is not None :
+                x_points = result[0]
+                y_points = result[1]
+                for index in range(0, len(x_points)) :
+                    point = (x_points[index], y_points[index])
+                    cv.Circle(pupil_frame, point, 2, cv.CV_RGB(255, 0, 0))
+
+                # Send image to the aws server
+                filename = '%0.2f.png' %currenttime
+                cv.SaveImage(filename, cv.QuerryFrame(self.forwardcam))
+                queue_ops.enqueue_frame(filename)
+
+        # Give it a border
         cv.Circle(pupil_frame, center, 4, cv.CV_RGB(255, 0, 0), cv.CV_FILLED)
         cv.Rectangle(pupil_frame, self.bounding_box[0],
                 self.bounding_box[1], cv.CV_RGB(0,255,0))
@@ -265,7 +330,6 @@ class Watcher :
         return
 
 
-
     def repeat(self) :
         currenttime = time.time() - self.starttime
         frame = cv.QueryFrame(self.eyecam)      # frame is an iplimage
@@ -277,6 +341,7 @@ class Watcher :
         #self.find_white(frame, currenttime)
         cv.ShowImage(self.white_window, frame)
 
+        self.previoustime = currenttime
         # Handle keyboard input
         return self.handle_keys()
 
