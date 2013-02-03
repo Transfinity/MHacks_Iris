@@ -2,14 +2,18 @@ import boto
 import simplejson
 from process_frame import *
 
-bucket_name = 'mhacks_iris.chris-cole.net'
+bucket_name = 'mhacks_iris'
 queue_name = 'frame_queue'
 
 def enqueue_frame(filename):
     #Connect to s3 and add the file
     s3 = boto.connect_s3()
     bucket = s3.get_bucket(bucket_name)
-    key = bucket.new_key('raw/'+filename)
+    #create the key name by stripping off the path
+    key_fname = filename.split('/')
+    key_fname = key_fname[len(key_fname)-1]
+    #upload the file to s3
+    key = bucket.new_key('raw/'+key_fname)
     key.set_contents_from_filename(filename)
     key.set_acl('public-read')
 
@@ -29,22 +33,26 @@ def dequeue_frame(dest_dir):
         return False
     m_data = simplejson.loads(m.get_body())
 
-    #Connect to s3
-    s3 = boto.connect_s3()
+    try:
+        #Connect to s3
+        s3 = boto.connect_s3()
 
-    #Decode the queue message
-    bucket = s3.get_bucket(m_data['bucket'])
-    key = bucket.get_key(m_data['key'])
+        #Decode the queue message
+        bucket = s3.get_bucket(m_data['bucket'])
+        key = bucket.get_key(m_data['key'])
 
-    #Construct the filename and download the frame from s3
-    filename = dest_dir.strip('/') + '/' + m_data['key'].split('/')[1]
-    key.get_contents_to_filename(filename)
+        #Construct the filename and download the frame from s3
+        key_uqname = key.name.split('/')[1]
+        local_fname = dest_dir.strip('/') + '/' + key_uqname
+        key.get_contents_to_filename(local_fname)
 
-    #Process the frame
-    process_frame(filename)
-
-    #Remove it from the queue
-    q.delete_message(m) 
+        #Process the frame
+        process_frame(local_fname, bucket, key)
+    finally:
+        #Remove it from the queue
+        #If we crashed on it once, we will
+        #surely do it again...
+        q.delete_message(m) 
 
     return True
 
