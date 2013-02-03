@@ -98,14 +98,14 @@ class Line_Detector :
 
 
 class Iris :
-    def __init__ (self, enable_aws, enable_draw) :
+    def __init__ (self, enable_aws, enable_draw, e_cam_id, f_cam_id) :
         self.enable_aws = enable_aws
         self.enable_draw = enable_draw
 
         self.frame_ct = 0
         self.screencapid = 0
-        self.eyecam = cv.CaptureFromCAM(EYE_CAM_ID)
-        self.forwardcam = cv.CaptureFromCAM(FORWARD_CAM_ID)
+        self.eyecam = cv.CaptureFromCAM(e_cam_id)
+        self.forwardcam = cv.CaptureFromCAM(f_cam_id)
         self.font = cv.InitFont(cv.CV_FONT_HERSHEY_PLAIN, 1, 1, 0, 1, 8)
         self.starttime = time.time()
         self.previoustime = 0
@@ -324,9 +324,15 @@ def main () :
     parser.add_option('-d', '--display',
             action='store_true', dest='enable_draw', default=False,
             help='enable graphical display')
+    parser.add_option('-e', '--eye_cam',
+            action='store', type='int', dest='e_cam_id', default=EYE_CAM_ID,
+            help='specify forward camera id (ls /dev/vid*)')
+    parser.add_option('-f', '--forward_cam',
+            action='store', type='int', dest='f_cam_id', default=FORWARD_CAM_ID,
+            help='specify forward camera id (ls /dev/vid*)')
     (options, arguments) = parser.parse_args()
 
-    iris = Iris(options.enable_aws, options.enable_draw)
+    iris = Iris(options.enable_aws, options.enable_draw, options.e_cam_id, options.f_cam_id)
     iris.run()
 
 if __name__ == '__main__' :
