@@ -25,10 +25,10 @@ def blit(dest, src, loc) :
     dest[loc[0]:h_max, loc[1]:w_max] = src
     return
 
-def send_to_aws (forwardcam, currenttime) :
+def send_to_aws (frame, currenttime) :
     # Send image to the aws server
     filename = '%0.2f.png' %currenttime
-    cv.SaveImage(filename, cv.QueryFrame(forwardcam))
+    cv.SaveImage(filename, frame)
     qo.enqueue_frame(filename)
 
 class Line_Detector :
@@ -84,14 +84,20 @@ class Line_Detector :
         return False
 
     def get_last_sequence (self) :
-        if self.full == False :
-            return []
-
-        currenttime = time.time()
-        if currenttime - self.last_line_time < 1 :
+        if self.recent_event() :
             return self.last_sequence
         else :
             return []
+
+    def recent_event (self) :
+        if self.full == False :
+            return False
+
+        currenttime = time.time()
+        if currenttime - self.last_line_time < 1 :
+            return True
+        else :
+            return False
 
     def reset_timer (self) :
         self.last_line_time = time.time()
@@ -125,6 +131,8 @@ class Iris :
 
         self.line_tracker = Line_Detector()
 
+        self.last_frame_sent = None
+
         if self.enable_draw :
             cv.MoveWindow(self.eyecam_post, 0, 0)
             cv.MoveWindow(self.eyecam_raw, sample_frame.width + 32, 0)
@@ -142,8 +150,10 @@ class Iris :
         elif char == 'c' or char == 'C' :
             if self.enable_aws :
                 print 'Faking a line event'
+                to_send = cv.QueryFrame(self.forwardcam)
+                self.last_frame_sent = to_send
                 aws_thread = threading.Thread(target=send_to_aws,
-                        args=(self.forwardcam, time.time() - self.start_time))
+                        args=(to_send, time.time() - self.start_time))
                 aws_thread.daemon = True
                 aws_thread.start()
             else :
@@ -264,8 +274,10 @@ class Iris :
             if event_detected :
                 print 'Detected line event at %0.2f' %currenttime
                 if self.enable_aws :
+                    to_send = cv.QueryFrame(self.forwardcam)
+                    self.last_frame_sent = to_send
                     aws_thread = threading.Thread(target=send_to_aws,
-                            args=(self.forwardcam,currenttime))
+                            args=(to_send, currenttime))
                     aws_thread.daemon = True
                     aws_thread.start()
 
@@ -304,7 +316,13 @@ class Iris :
                     self.bounding_box[1], cv.CV_RGB(0,255,0))
             cv.ShowImage(self.eyecam_raw, frame)
 
-            cv.ShowImage(self.forward_window, cv.QueryFrame(self.forwardcam))
+            if self.line_tracker.recent_event() :
+                fw_image = cv.CloneImage(self.last_frame_sent)
+                cv.Rectangle(fw_image, (0,0), (fw_image.width, fw_image.height),
+                        cv.CV_RGB(255,0,255), 4)
+                cv.ShowImage(self.forward_window, fw_image)
+            else :
+                cv.ShowImage(self.forward_window, cv.QueryFrame(self.forwardcam))
 
         self.previoustime = currenttime
         # Handle keyboard input
