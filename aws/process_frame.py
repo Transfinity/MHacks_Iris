@@ -3,7 +3,6 @@ import boto
 import simplejson
 import twitter
 import random
-import cv
 import sys
 import time
 import Image
@@ -23,16 +22,44 @@ a_k = fp.readline().strip()
 a_s = fp.readline().strip()
 fp.close()
 
+#load american-english dictionary
+fp = open('/usr/share/dict/american-english', 'r')
+wordlist = {}
+for line in fp:
+    wordlist[line.strip()] = True
+fp.close()
+
 def process_frame(filename, bucket, key):
     #Open the file
     print '  > processing \'' + filename + '\''
 
     #Do OCR on the file
     text = image_file_to_string(filename, graceful_errors=True);
-    text = text.strip()
+    words = text.strip().split()
+
+    #Strip out non-words
+    text = ''
+    has_four_word = False
+    for w in words:
+        w_strip = w.strip('.,?!\'\"').lower()
+        try:
+            if wordlist[w_strip]:
+                text = text + ' ' + w
+                if len(w) > 3:
+                    has_four_word = True
+        except KeyError:
+            cnt = 0
+            for c in w:
+                if (c >= 'a' and c <= 'z') or (c >= 'A' and c <= 'Z'):
+                    cnt += 1
+            if cnt > 3:
+                text = text + ' ' + w
+            else:
+                print ' ignoring non-word \''+w+'\'',
+    print ''
 
     #Ignore the frame if no text found
-    if len(text) == 0:
+    if len(text) == 0 or not has_four_word:
         print '  > frame contained no discernable text'
         return
 
