@@ -2,13 +2,13 @@
 import cv
 import math
 import numpy as np
-import scipy.stats as stats
 import threading
 import time
 
 from optparse import OptionParser
 
 import aws.queue_ops as qo
+from line_detector import Line_Detector
 
 EYE_CAM_ID = 1
 FORWARD_CAM_ID = 2
@@ -25,76 +25,13 @@ def blit(dest, src, loc) :
     dest[loc[0]:h_max, loc[1]:w_max] = src
     return
 
-def send_to_aws (forwardcam, currenttime) :
+def send_to_aws (frame, currenttime) :
     # Send image to the aws server
     filename = '%0.2f.png' %currenttime
-    cv.SaveImage(filename, cv.QueryFrame(forwardcam))
+    cv.SaveImage(filename, frame)
     qo.enqueue_frame(filename)
 
-class Line_Detector :
-    def __init__ (self) :
-        self.pearson_threshold = 0.9
-        self.min_xy_ratio = 3
-        self.x_points = np.zeros(20)
-        self.y_points = np.zeros(20)
-        self.pp_index = 0
-        self.pp_max = 20
-        self.full = False
-        self.last_line_time = 0
-        self.min_line_time = 5
-        self.last_sequence = []
-
-    def add_point (self, point) :
-        if self.full == False :
-            self.x_points[self.pp_index] = point[0]
-            self.y_points[self.pp_index] = point[1]
-            self.pp_index += 1
-
-            if self.pp_index == self.pp_max :
-                self.full = True
-                self.pp_index = 0
-
-            return False
-
-        else :
-            self.x_points[self.pp_index] = point[0]
-            self.y_points[self.pp_index] = point[1]
-            self.pp_index += 1
-            self.pp_index %= self.pp_max
-
-            # We want more horizontal movement than vertical
-            delta_x = abs(self.x_points.max() - self.x_points.min())
-            delta_y = abs(self.y_points.max() - self.y_points.min())
-            if delta_y > delta_x * self.min_xy_ratio :
-                return False
-
-            # Make sure that the points fall in a line
-            corrcoef, p_val = stats.pearsonr(self.x_points, self.y_points)
-            if abs(corrcoef) > self.pearson_threshold :
-                currenttime = time.time()
-                if currenttime - self.last_line_time > self.min_line_time :
-                    print 'Firing line read event!'
-                    self.last_line_time = currenttime
-                    self.last_sequence = []
-                    for index in range(0, len(self.x_points)) :
-                        point = (int(self.x_points[index]), int(self.y_points[index]))
-                        self.last_sequence.append(point)
-                    return True
-
-        return False
-
-    def get_last_sequence (self) :
-        if self.full == False :
-            return []
-
-        currenttime = time.time()
-        if currenttime - self.last_line_time < 1 :
-            return self.last_sequence
-        else :
-            return []
-
-    def reset_timer (self) :
-        self.last_line_time = time.time()
+    print 'Thread for image', filename, 'finished.'
 
 
 class Iris :
@@ -125,6 +62,8 @@ class Iris :
 
         self.line_tracker = Line_Detector()
 
+        self.last_frame_sent = None
+
         if self.enable_draw :
             cv.MoveWindow(self.eyecam_post, 0, 0)
             cv.MoveWindow(self.eyecam_raw, sample_frame.width + 32, 0)
@@ -134,20 +73,29 @@ class Iris :
     def handle_keys (self) :
         c = cv.WaitKey(2)
         char = chr(c & 0xff)
-        if char == 'p' or char == 'P' :
+        if char == 'h' or char == 'H' or char =='?' :
+            print 'Iris key bindings:'
+            print 'p\tSave current image'
+            print 'c\tFake a line event (post a frame to AWS)'
+            print 'e\tEvaporate line event cooldown'
+            print 's\tSwap camera feeds'
+            print 'h\tDisplay this help'
+            print 'q\tQuit'
+
+        elif char == 'p' or char == 'P' :
             cv.SaveImage('screencap%03d_pupil.png' %(self.screencapid), self.pupil_frame)
             cv.SaveImage('screencap%03d_white.png' %(self.screencapid), self.white_frame)
             self.screencapid += 1
 
         elif char == 'c' or char == 'C' :
+            print 'Faking a line event'
+            to_send = cv.QueryFrame(self.forwardcam)
+            self.last_frame_sent = to_send
             if self.enable_aws :
-                print 'Faking a line event'
                 aws_thread = threading.Thread(target=send_to_aws,
-                        args=(self.forwardcam, time.time() - self.start_time))
+                        args=(to_send, time.time() - self.starttime))
                 aws_thread.daemon = True
                 aws_thread.start()
-            else :
-                return False
 
         elif char == 's' or char == 'S' :
             print 'Switching camera feeds'
@@ -156,7 +104,12 @@ class Iris :
             self.eyecam = self.forwardcam
             self.forwardcam = temp
 
-        elif c != -1 :
+        elif char == 'e' or char == 'E' :
+            print 'Evaporating cooldown'
+            self.line_tracker.evaporate_cooldown()
+
+        elif char == 'q' or char == 'Q' :
+            print 'Thank you for using Iris'
             return False
 
         return True
@@ -263,9 +216,11 @@ class Iris :
             event_detected = self.line_tracker.add_point(center)
             if event_detected :
                 print 'Detected line event at %0.2f' %currenttime
+                to_send = cv.QueryFrame(self.forwardcam)
+                self.last_frame_sent = to_send
                 if self.enable_aws :
                     aws_thread = threading.Thread(target=send_to_aws,
-                            args=(self.forwardcam,currenttime))
+                            args=(to_send, currenttime))
                     aws_thread.daemon = True
                     aws_thread.start()
 
@@ -304,7 +259,13 @@ class Iris :
                     self.bounding_box[1], cv.CV_RGB(0,255,0))
             cv.ShowImage(self.eyecam_raw, frame)
 
-            cv.ShowImage(self.forward_window, cv.QueryFrame(self.forwardcam))
+            if self.line_tracker.recent_event() and self.last_frame_sent is not None :
+                fw_image = cv.CloneImage(self.last_frame_sent)
+                cv.Rectangle(fw_image, (0,0), (fw_image.width, fw_image.height),
+                        cv.CV_RGB(255,0,255), 4)
+                cv.ShowImage(self.forward_window, fw_image)
+            else :
+                cv.ShowImage(self.forward_window, cv.QueryFrame(self.forwardcam))
 
         self.previoustime = currenttime
         # Handle keyboard input
@@ -334,6 +295,9 @@ def main () :
 
     iris = Iris(options.enable_aws, options.enable_draw, options.e_cam_id, options.f_cam_id)
     iris.run()
+    for thread in threading.enumerate() :
+        if thread is not threading.currentThread() :
+            thread.join()
 
 if __name__ == '__main__' :
     main()
