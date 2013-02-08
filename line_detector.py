@@ -15,7 +15,7 @@ class Line_Detector :
         self.pp_max = 20
         self.full = False
         self.last_line_time = 0
-        self.min_line_time = 30
+        self.min_line_time = 50
         self.last_sequence = []
 
     def add_point (self, point) :
@@ -39,7 +39,7 @@ class Line_Detector :
             # We want more horizontal movement than vertical
             delta_x = abs(self.x_points.max() - self.x_points.min())
             delta_y = abs(self.y_points.max() - self.y_points.min())
-            if delta_x > delta_y * self.min_xy_ratio and delta_x > self.min_line_width :
+            if delta_x < (delta_y * self.min_xy_ratio) or delta_x < self.min_line_width :
                 return False
 
             # Make sure that the points fall in a line
