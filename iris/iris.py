@@ -75,11 +75,6 @@ class Iris :
         c = cv.WaitKey(2)
         char = chr(c & 0xff)
 
-        if c != -1 :
-            print 'Got key code: %x' %c
-            print 'Char version:',char
-
-
         if char == 'h' or char == 'H' or char =='?' :
             print 'Iris key bindings:'
             print 'p\tSave current image'
