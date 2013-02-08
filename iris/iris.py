@@ -5,11 +5,8 @@ import numpy as np
 import threading
 import time
 
-from ...aws import queue_ops as qo
+from aws import queue_ops as qo
 from line_detector import Line_Detector
-
-EYE_CAM_ID = 1
-FORWARD_CAM_ID = 2
 
 # Takes array, array, (y,x)
 def blit(dest, src, loc) :
@@ -81,8 +78,7 @@ class Iris :
             print 'q\tQuit'
 
         elif char == 'p' or char == 'P' :
-            cv.SaveImage('screencap%03d_pupil.png' %(self.screencapid), self.pupil_frame)
-            cv.SaveImage('screencap%03d_white.png' %(self.screencapid), self.white_frame)
+            cv.SaveImage('pupil_%02d.png' %(self.screencapid), self.pupil_frame)
             self.screencapid += 1
 
         elif char == 'c' or char == 'C' :
@@ -148,7 +144,7 @@ class Iris :
                     avg_y += y
 
         if len(dark_pix) == 0 :
-            return (42, 42)
+            return (42, 42), 0
 
         avg_x = int(avg_x / len(dark_pix))
         avg_y = int(avg_y / len(dark_pix))
@@ -175,17 +171,20 @@ class Iris :
                 avg_x += pix[1][0]
                 avg_y += pix[1][1]
         if len(trimmed_pix) == 0 :
-            return (42, 42)
+            return (42, 42), 0
         avg_x = int(avg_x / len(trimmed_pix))
         avg_y = int(avg_y / len(trimmed_pix))
         trimmed_center = (avg_x, avg_y)
 
-        return trimmed_center
+        return trimmed_center, int(dist_avg)
 
 
-    def find_pupil (self, frame, currenttime) :
+    def find_pupil (self, frame) :
+        currenttime = time.time() - self.starttime
+
         # Preprocess : greyscale, smooth, equalize, threshold
         grey_frame = cv.CreateImage(cv.GetSize(frame), 8, 1)
+        # TODO: Just grab the blue portion, instead of greyscale
         cv.CvtColor(frame, grey_frame, cv.CV_BGR2GRAY)
 
         cv.Smooth(grey_frame, grey_frame, cv.CV_MEDIAN)
@@ -198,16 +197,13 @@ class Iris :
         # Dilate to remove eyebrows
         element_shape = cv.CV_SHAPE_RECT
         pos = 1
-        element = cv.CreateStructuringElementEx(pos*2+1, pos*2+1, pos, pos, element_shape)
-        cv.Dilate(grey_frame, grey_frame,element, 2)
+        element = cv.CreateStructuringElementEx(pos*2+1, pos*2+1,
+                pos, pos, element_shape)
+        cv.Dilate(grey_frame, grey_frame, element, 2)
         cv.Smooth(grey_frame, grey_frame, cv.CV_MEDIAN)
 
         # Track black pixels within the bounding box, and compute the average
-        center = self.handle_dark_pixels(grey_frame)
-
-        # Go to color
-        pupil_frame = cv.CreateImage((frame.width, frame.height), 8, 3)
-        cv.CvtColor(grey_frame, pupil_frame, cv.CV_GRAY2BGR)
+        center, radius = self.handle_dark_pixels(grey_frame)
 
         # See if we've found a line-event
         if currenttime - self.previoustime > .05 :
@@ -222,26 +218,31 @@ class Iris :
                     aws_thread.daemon = True
                     aws_thread.start()
 
+        # Draw robovision elements on the frame
         if self.enable_draw :
-            # Draw robovision elements
+            # Switch back to color encoding
+            pupil_frame = cv.CreateImage((frame.width, frame.height), 8, 3)
+            cv.CvtColor(grey_frame, pupil_frame, cv.CV_GRAY2BGR)
 
             # Mark the sequence of points that triggered the last line event
             for point in self.line_tracker.get_last_sequence() :
                 cv.Circle(pupil_frame, point, 3, cv.CV_RGB(255, 0, 255))
 
-            # Circle the center of the pupil
+            # Dot the center of the pupil
             cv.Circle(pupil_frame, center, 4, cv.CV_RGB(255, 0, 0), cv.CV_FILLED)
+
+            # Circle the full pupil
+            cv.Circle(pupil_frame, center, radius, cv.CV_RGB(255, 128, 0));
 
             # Give it a border
             cv.Rectangle(pupil_frame, self.bounding_box[0],
                     self.bounding_box[1], cv.CV_RGB(0,255,0))
 
-            pupil_border = self.build_border(pupil_frame)
-            cv.PutText(pupil_border,
-                    'Frame %s - %0.2f seconds' %(self.frame_ct, currenttime),
-                    (10, frame.height+50), self.font, 255)
+            return center, pupil_frame
 
-            cv.ShowImage(self.eyecam_post, pupil_border)
+        else :  # No display
+            return center, None
+
 
 
     def repeat(self) :
@@ -250,13 +251,25 @@ class Iris :
         self.frame_ct += 1
 
         # Find the pupil
-        self.find_pupil(frame, currenttime)
+        center, pupil_frame = self.find_pupil(frame)
 
+        # Draw the visualization, if needed
         if self.enable_draw :
+            # Draw the eyecam feed with robovision
+            pupil_border = self.build_border(pupil_frame)
+            cv.PutText(pupil_border,
+                    'Frame %s - %0.2f seconds' %(self.frame_ct, currenttime),
+                    (10, frame.height+50), self.font, 255)
+
+            cv.ShowImage(self.eyecam_post, pupil_border)
+            self.pupil_frame = pupil_frame
+
+            # Draw the eyecam feed w/o robovision
             cv.Rectangle(frame, self.bounding_box[0],
                     self.bounding_box[1], cv.CV_RGB(0,255,0))
             cv.ShowImage(self.eyecam_raw, frame)
 
+            # Draw the forwardcam feed
             if self.line_tracker.recent_event() and self.last_frame_sent is not None :
                 fw_image = cv.CloneImage(self.last_frame_sent)
                 cv.Rectangle(fw_image, (0,0), (fw_image.width, fw_image.height),
