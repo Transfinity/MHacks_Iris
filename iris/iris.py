@@ -82,6 +82,7 @@ class Iris :
             print 'e\tEvaporate line event cooldown'
             print 's\tSwap camera feeds'
             print 't\tSet/unset threshold'
+            print 'f\tCycle filters'
             print 'h\tDisplay this help'
             print 'q\tQuit'
 
