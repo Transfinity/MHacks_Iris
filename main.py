@@ -1,6 +1,7 @@
 #!/usr/bin/python
 from iris.iris import Iris
 from optparse import OptionParser
+import threading
 
 EYE_CAM_ID = 1
 FORWARD_CAM_ID = 2

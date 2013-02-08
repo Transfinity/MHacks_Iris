@@ -8,6 +8,9 @@ import time
 from aws import queue_ops as qo
 from line_detector import Line_Detector
 
+DEFAULT_THRESHOLD = 40
+NUM_FILTERS = 7
+
 # Takes array, array, (y,x)
 def blit(dest, src, loc) :
     h_max = src.height + loc[0]
@@ -41,6 +44,9 @@ class Iris :
         self.font = cv.InitFont(cv.CV_FONT_HERSHEY_PLAIN, 1, 1, 0, 1, 8)
         self.starttime = time.time()
         self.previoustime = 0
+        self.threshold_toggle = False
+        self.threshold = DEFAULT_THRESHOLD
+        self.filterlevel = 0
 
         if self.enable_draw :
             self.eyecam_post = 'Eyecam Robovision'
@@ -68,18 +74,49 @@ class Iris :
     def handle_keys (self) :
         c = cv.WaitKey(2)
         char = chr(c & 0xff)
+
+        if c != -1 :
+            print 'Got key code: %x' %c
+            print 'Char version:',char
+
+
         if char == 'h' or char == 'H' or char =='?' :
             print 'Iris key bindings:'
             print 'p\tSave current image'
             print 'c\tFake a line event (post a frame to AWS)'
             print 'e\tEvaporate line event cooldown'
             print 's\tSwap camera feeds'
+            print 't\tSet/unset threshold'
             print 'h\tDisplay this help'
             print 'q\tQuit'
 
         elif char == 'p' or char == 'P' :
             cv.SaveImage('pupil_%02d.png' %(self.screencapid), self.pupil_frame)
             self.screencapid += 1
+
+        elif char == 'f' or char == 'F' :
+            self.filterlevel += 1
+            self.filterlevel %= NUM_FILTERS
+
+        elif char == 't' :
+            self.threshold_toggle = not self.threshold_toggle
+            if self.threshold_toggle :
+                print 'Use the up and down keys to change the threshold'
+            else :
+                print 'Resetting threshold to', DEFAULT_THRESHOLD
+                self.threshold = DEFAULT_THRESHOLD
+
+        elif self.threshold_toggle and c == 0x10ff52 :
+            # Up arrow key
+            self.threshold += 5
+            self.threshold = min(self.threshold, 255)
+            print 'Threshold is', self.threshold
+
+        elif self.threshold_toggle and c == 0x10ff54 :
+            # Down arrow key
+            self.threshold -= 5
+            self.threshold = max(self.threshold, 0)
+            print 'Threshold is', self.threshold
 
         elif char == 'c' or char == 'C' :
             print 'Faking a line event'
@@ -102,7 +139,7 @@ class Iris :
             print 'Evaporating cooldown'
             self.line_tracker.evaporate_cooldown()
 
-        elif char == 'q' or char == 'Q' :
+        elif char == 'q' or char == 'Q' or c == 0x10001b :
             print 'Thank you for using Iris'
             return False
 
@@ -184,15 +221,36 @@ class Iris :
 
         # Preprocess : greyscale, smooth, equalize, threshold
         grey_frame = cv.CreateImage(cv.GetSize(frame), 8, 1)
+        g_plane = cv.CreateImage(cv.GetSize(frame), 8, 1)
+        b_plane = cv.CreateImage(cv.GetSize(frame), 8, 1)
         # TODO: Just grab the blue portion, instead of greyscale
-        cv.CvtColor(frame, grey_frame, cv.CV_BGR2GRAY)
+        cv.Split(frame, None, g_plane, b_plane, None)
+        cv.AddWeighted(g_plane, .5, b_plane, .5, 0.0, grey_frame)
+        #cv.CvtColor(frame, grey_frame, cv.CV_BGR2GRAY)
+
+        if self.filterlevel == 1 :
+            out_frame = cv.CloneImage(g_plane)
+            label = 'Green Filter'
+        elif self.filterlevel == 2 :
+            out_frame = cv.CloneImage(b_plane)
+            label = 'Blue Filter'
+        elif self.filterlevel == 3 :
+            out_frame = cv.CloneImage(grey_frame)
+            label = 'Blue and Green'
 
         cv.Smooth(grey_frame, grey_frame, cv.CV_MEDIAN)
         cv.EqualizeHist(grey_frame, grey_frame)
 
-        threshold = 30
+        if self.filterlevel == 4 :
+            out_frame = cv.CloneImage(grey_frame)
+            label = 'Smooth and Equalize'
+
         color = 255
-        cv.Threshold(grey_frame, grey_frame, threshold, color, cv.CV_THRESH_BINARY)
+        cv.Threshold(grey_frame, grey_frame, self.threshold,
+                color, cv.CV_THRESH_BINARY)
+        if self.filterlevel == 5 :
+            out_frame = cv.CloneImage(grey_frame)
+            label = 'Threshold'
 
         # Dilate to remove eyebrows
         element_shape = cv.CV_SHAPE_RECT
@@ -201,9 +259,16 @@ class Iris :
                 pos, pos, element_shape)
         cv.Dilate(grey_frame, grey_frame, element, 2)
         cv.Smooth(grey_frame, grey_frame, cv.CV_MEDIAN)
+        if self.filterlevel == 6 :
+            out_frame = cv.CloneImage(grey_frame)
+            label = 'Dilate'
 
         # Track black pixels within the bounding box, and compute the average
         center, radius = self.handle_dark_pixels(grey_frame)
+
+        if self.filterlevel == 0 :
+            out_frame = cv.CloneImage(grey_frame)
+            label = 'Full Robovision'
 
         # See if we've found a line-event
         if currenttime - self.previoustime > .05 :
@@ -222,23 +287,30 @@ class Iris :
         if self.enable_draw :
             # Switch back to color encoding
             pupil_frame = cv.CreateImage((frame.width, frame.height), 8, 3)
-            cv.CvtColor(grey_frame, pupil_frame, cv.CV_GRAY2BGR)
+            cv.CvtColor(out_frame, pupil_frame, cv.CV_GRAY2BGR)
 
-            # Mark the sequence of points that triggered the last line event
-            for point in self.line_tracker.get_last_sequence() :
-                cv.Circle(pupil_frame, point, 3, cv.CV_RGB(255, 0, 255))
+            if self.filterlevel == 0 :
+                # Mark the sequence of points that triggered the last line event
+                for point in self.line_tracker.get_last_sequence() :
+                    cv.Circle(pupil_frame, point, 3, cv.CV_RGB(255, 0, 255))
 
-            # Dot the center of the pupil
-            cv.Circle(pupil_frame, center, 4, cv.CV_RGB(255, 0, 0), cv.CV_FILLED)
+                # Dot the center of the pupil
+                cv.Circle(pupil_frame, center, 4, cv.CV_RGB(255, 0, 0), cv.CV_FILLED)
 
-            # Circle the full pupil
-            cv.Circle(pupil_frame, center, radius, cv.CV_RGB(255, 128, 0));
+                # Circle the full pupil
+                cv.Circle(pupil_frame, center, radius, cv.CV_RGB(255, 128, 0));
+
+                # Draw the bounding box
+                cv.Rectangle(pupil_frame, self.bounding_box[0],
+                        self.bounding_box[1], cv.CV_RGB(0,255,0))
 
             # Give it a border
-            cv.Rectangle(pupil_frame, self.bounding_box[0],
-                    self.bounding_box[1], cv.CV_RGB(0,255,0))
+            pupil_border = self.build_border(pupil_frame)
+            cv.PutText(pupil_border,
+                    'Frame %s - %0.2f seconds - %s - threshold %s' %(self.frame_ct, currenttime, label, self.threshold),
+                    (10, frame.height+50), self.font, 255)
 
-            return center, pupil_frame
+            return center, pupil_border
 
         else :  # No display
             return center, None
@@ -256,12 +328,8 @@ class Iris :
         # Draw the visualization, if needed
         if self.enable_draw :
             # Draw the eyecam feed with robovision
-            pupil_border = self.build_border(pupil_frame)
-            cv.PutText(pupil_border,
-                    'Frame %s - %0.2f seconds' %(self.frame_ct, currenttime),
-                    (10, frame.height+50), self.font, 255)
 
-            cv.ShowImage(self.eyecam_post, pupil_border)
+            cv.ShowImage(self.eyecam_post, pupil_frame)
             self.pupil_frame = pupil_frame
 
             # Draw the eyecam feed w/o robovision
