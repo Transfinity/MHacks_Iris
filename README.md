@@ -3,6 +3,10 @@ MHacks_Iris
 
 Fuckin da best!!!!!
 
+Amazon EC2 AMI with the proper libraries installed:
+===========
+ami-1405937d
+
 Libraries used:
 ===========
 
