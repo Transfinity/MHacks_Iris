@@ -169,8 +169,8 @@ class Iris :
         dark_pix = []
         avg_x = 0.0
         avg_y = 0.0
-        for y in range(self.bounding_box[0][1], self.bounding_box[1][1]) :
-            for x in range(self.bounding_box[0][0], self.bounding_box[1][0]) :
+        for y in range(grey_frame.height):
+            for x in range(grey_frame.width):
                 if grey_frame[y, x] < 100 :
                     dark_pix.append((x, y))
                     avg_x += x
@@ -296,10 +296,6 @@ class Iris :
                 # Circle the full pupil
                 cv.Circle(pupil_frame, center, radius, cv.CV_RGB(255, 128, 0));
 
-                # Draw the bounding box
-                cv.Rectangle(pupil_frame, self.bounding_box[0],
-                        self.bounding_box[1], cv.CV_RGB(0,255,0))
-
             # Give it a border
             pupil_border = self.build_border(pupil_frame)
             cv.PutText(pupil_border,
@@ -315,7 +311,9 @@ class Iris :
 
     def repeat(self) :
         currenttime = time.time() - self.starttime
-        frame = cv.QueryFrame(self.eyecam)      # frame is an iplimage
+        box_w = self.bounding_box[1][0]-self.bounding_box[0][0]
+        box_h = self.bounding_box[1][1]-self.bounding_box[0][1]
+        frame = cv.GetSubRect(cv.QueryFrame(self.eyecam), (self.bounding_box[0][0], self.bounding_box[0][1], box_w, box_h))      # frame is an iplimage
         self.frame_ct += 1
 
         # Find the pupil
@@ -329,8 +327,6 @@ class Iris :
             self.pupil_frame = pupil_frame
 
             # Draw the eyecam feed w/o robovision
-            cv.Rectangle(frame, self.bounding_box[0],
-                    self.bounding_box[1], cv.CV_RGB(0,255,0))
             cv.ShowImage(self.eyecam_raw, frame)
 
             # Draw the forwardcam feed
