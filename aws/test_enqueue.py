@@ -1,5 +1,7 @@
 import sys
-from queue_ops import *
+from ocr_queue import OCR_Queue
+
+q = OCR_Queue()
 
 while True:
     print 'Input filename:',
@@ -8,6 +10,6 @@ while True:
         break
 
     print '  > adding ' + line + ' to s3'
-    enqueue_frame(line)
+    q.enqueue_frame(line)
     print '  > success!'
 

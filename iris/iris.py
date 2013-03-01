@@ -5,7 +5,7 @@ import numpy as np
 import threading
 import time
 
-from aws import queue_ops as qo
+from aws.ocr_queue import OCR_Queue
 from line_detector import Line_Detector
 
 DEFAULT_THRESHOLD = 40
@@ -23,11 +23,11 @@ def blit(dest, src, loc) :
     dest[loc[0]:h_max, loc[1]:w_max] = src
     return
 
-def send_to_aws (frame, currenttime) :
+def send_to_aws (queue, frame, currenttime) :
     # Send image to the aws server
     filename = '%0.2f.png' %currenttime
     cv.SaveImage(filename, frame)
-    qo.enqueue_frame(filename)
+    queue.enqueue_frame(filename)
 
     print 'Thread for image', filename, 'finished.'
 
@@ -47,6 +47,7 @@ class Iris :
         self.threshold_toggle = False
         self.threshold = DEFAULT_THRESHOLD
         self.filterlevel = 0
+        self.queue = OCR_Queue()
 
         if self.enable_draw :
             self.eyecam_post = 'Eyecam Robovision'
@@ -120,7 +121,7 @@ class Iris :
             self.last_frame_sent = to_send
             if self.enable_aws :
                 aws_thread = threading.Thread(target=send_to_aws,
-                        args=(to_send, time.time() - self.starttime))
+                        args=(self.queue, to_send, time.time() - self.starttime))
                 aws_thread.daemon = True
                 aws_thread.start()
 
@@ -275,7 +276,7 @@ class Iris :
                 self.last_frame_sent = to_send
                 if self.enable_aws :
                     aws_thread = threading.Thread(target=send_to_aws,
-                            args=(to_send, currenttime))
+                            args=(self.queue, to_send, currenttime))
                     aws_thread.daemon = True
                     aws_thread.start()
 
