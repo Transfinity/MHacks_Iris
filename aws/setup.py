@@ -67,15 +67,15 @@ def get_key_pair(ec2, name):
     return name
 
 def get_security_group(ec2, name):
-    if security_group_name not in [sg.name for sg in ec2.get_all_security_groups()]:
+    if name not in [sg.name for sg in ec2.get_all_security_groups()]:
         #Create the security group
         print 'Creating the security group \'' + name + '\'.'
-        sg = ec2.create_security_group(name=security_group_name, description='mhacks_iris')
+        sg = ec2.create_security_group(name=name, description='mhacks_iris')
         sg.authorize(ip_protocol='tcp', from_port='22', to_port='22', cidr_ip='0.0.0.0/0')
     return name
 
 def start_ec2_instance(ec2, ami, kp_name, sg_name, type):
-    res = ec2.run_instances(image_id='ami-1405937d', key_name=key_pair_name, security_groups=[security_group_name], instance_type='t1.micro')
+    res = ec2.run_instances(image_id='ami-1405937d', key_name=kp_name, security_groups=[sg_name], instance_type='t1.micro')
 
     #Wait a bit for the instance to boot up
     print 'Waiting for the instance to start up...'
