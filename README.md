@@ -18,9 +18,10 @@ python-httplib2<br />
 python-oauth2<br />
 python-simplejson<br />
 
-python-pytesser<br />
 tesseract-ocr<br />
 python-imaging<br />
 python-numpy
 
 python-boto<br />
+
+python-tesseract (see [Install instructions](http://code.google.com/p/python-tesseract/wiki/HowToInstallPythonTesseractDeb))
