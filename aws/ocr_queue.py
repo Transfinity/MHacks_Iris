@@ -15,6 +15,7 @@ class OCR_Queue:
         self.wordlist = word_dictionary
 
         self.mysql = MySQL_Mgr()
+        self.mysql.create_table()
 
         if self.s3_conn == None:
             self.s3_conn = boto.connect_s3()

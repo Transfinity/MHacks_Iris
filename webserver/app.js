@@ -43,7 +43,7 @@ app.get('/', function (req, res) {
 
 app.get('/gallery', function(req, res) {
     console.log('Processing SQL query')
-    var query = client.query('SELECT * FROM Snapshots', function(err, rows, fields) {
+    client.query('SELECT * FROM Snapshots WHERE DATE_SUB(CURDATE(), INTERVAL 7 DAY) <= Date', function(err, rows, fields) {
         if (err) throw err;
 
         // Retrieve urls from the database query
