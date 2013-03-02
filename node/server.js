@@ -1,17 +1,13 @@
 // Import the http module, make accessable via http
-var http = require("http");
-var url  = require("url");
+var http = require("http"),
+    url  = require("url");
 
 function start(route, handle) {
     function onRequest(request, response) {
+        var postData = "";
         var pathname = url.parse(request.url).pathname;
         console.log("Handling request for " + pathname);
-
-        route(handle, pathname);
-
-        response.writeHead(200, {"Content-Type": "text/plain"});
-        response.write("Hello, World, from a notorious function");
-        response.end();
+        route(handle, pathname, request, response);
     }
 
     http.createServer(onRequest).listen(8888);
