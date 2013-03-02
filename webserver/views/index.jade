@@ -1,0 +1,37 @@
+- var s = 'string';
+- console.log('in jade!')
+
+extend layout
+
+block content
+  p
+    | Vivamus hendrerit arcu sed erat molestie
+    | vehicula. Sed auctor neque eu tellus
+    | rhoncus ut eleifend nibh porttitor. Ut in.
+
+  p
+    | Donec congue lacinia dui, a porttitor
+    | lectus condimentum laoreet. Nunc eu
+    | ullamcorper orci. Quisque eget odio ac
+    | lectus vestibulum faucibus eget in metus.
+    | In pellentesque faucibus vestibulum. Nulla
+    | at nulla justo, eget luctus tortor.
+
+
+  - for (var i = 0; i < 3; i++)
+    p= arr[i]
+
+  img(alt='This is the alt text', src='#{imagesrc}')
+
+
+block sidebar
+  .widget
+    h1 Widget
+    p
+      | Sed auctor neque eu tellus rhoncus ut
+      | eleifend nibh porttitor. Ut in nulla enim.
+
+    p
+      | Vivamus hendrerit arcu sed erat molestie
+      | vehicula.
+

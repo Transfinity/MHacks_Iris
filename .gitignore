@@ -1,3 +1,6 @@
 *.png
 *.swp
 *.pyc
+
+node/node_modules
+webserver/node_modules

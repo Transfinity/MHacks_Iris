@@ -16,4 +16,4 @@ GRANT ALL ON irisdb.* TO 'iris_ocr'@'localhost';
 
 -- This user is the webapp, and can only read.
 CREATE USER 'iris_webapp'@'localhost' IDENTIFIED BY 'redeagle';
-GRANT SELECT ON irisdb.* TO 'iris_ocr'@'localhost';
+GRANT SELECT ON irisdb.* TO 'iris_webapp'@'localhost';

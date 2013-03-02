@@ -1,0 +1,25 @@
+!!!5
+html
+    head
+        title #{title} - Gallery
+    link(rel='stylesheet', href='/stylesheets/style.css')
+  body
+      header
+        h1 Gallery
+
+      .gallerycontainer
+          table(border='1')
+              - var i = 0;
+              - while (i < images.length)
+                  tr
+                      - var j = 0;
+                      - for (; j+i < images.length && j < 4; j++)
+                          td
+                              .entry
+                                  - var alttext = 'Alt text for image ' + images[i+j];
+                                  img(alt=alttext, src=images[i+j])
+                      - i += 4;
+
+
+    footer
+        p Running on node with Express, Jade and Stylus

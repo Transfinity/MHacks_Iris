@@ -45,8 +45,11 @@ class MySQL_Mgr :
 
 if __name__ == '__main__' :
     mgr = MySQL_Mgr()
-    mgr.add_image('images/fake.png', 'fake text', '2013-02-28', '12:00:00')
-    mgr.add_image('images/poop.png', 'fake text', '2013-02-28', '12:30:00')
-    mgr.add_image('images/test.png', 'fake text', '2013-02-28', '14:00:00')
+    mgr.add_image('images/duck1.gif', 'fake text', '2013-02-28', '12:00:00')
+    mgr.add_image('images/duck2.jpg', 'fake text', '2013-02-28', '12:30:00')
+    mgr.add_image('images/duck3.jpg', 'fake text', '2013-02-28', '12:30:00')
+    mgr.add_image('images/duck4.jpg', 'fake text', '2013-02-28', '12:30:00')
+    mgr.add_image('images/duck3.jpg', 'fake text', '2013-02-28', '12:30:00')
+    mgr.add_image('images/duck4.jpg', 'fake text', '2013-02-28', '12:30:00')
     mgr.commit()
     mgr.view_table()
