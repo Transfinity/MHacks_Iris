@@ -5,6 +5,7 @@ import twitter
 import tesseract
 import cv
 
+from mysql.mysql_mgr import MySQL_Mgr
 
 class OCR_Queue:
     def __init__(self, s3_bucket_name = 'mhacks_iris', sqs_queue_name = 'mhacks_iris', s3_connection = None, sqs_connection = None, twitter_connection = None, word_dictionary = None):
@@ -12,6 +13,8 @@ class OCR_Queue:
         self.s3_conn = s3_connection
         self.sqs_conn = sqs_connection
         self.wordlist = word_dictionary
+
+        self.mysql = MySQL_Mgr()
 
         if self.s3_conn == None:
             self.s3_conn = boto.connect_s3()
@@ -51,7 +54,7 @@ class OCR_Queue:
         try:
             key = self.bucket.get_key(m_data['key'])
 
-            #Construct the filename 
+            #Construct the filename
             local_fname = os.path.join(dest_dir, os.path.basename(key.name))
             #Download the frame from S3
             key.get_contents_to_filename(local_fname)
@@ -62,7 +65,7 @@ class OCR_Queue:
             #Remove it from the queue
             #If we crashed on it once, we will
             #surely do it again...
-            self.queue.delete_message(m) 
+            self.queue.delete_message(m)
 
         print '  > dequeued frame ' + '/' + key.name
         return True
@@ -102,43 +105,9 @@ class OCR_Queue:
             print '  > frame contained no discernable text'
             return
 
-        #Tweet the contents if possible
-        #otherwise generate a html file and tweet that
-        print '  > found text.'
-        print '  > generating tweet.'
-        url = 'https://s3.amazonaws.com/' + self.bucket.name + '/' + key.name
-        text = text.strip() + ' ' + url
-        if len(text) < 140:
-            #tweet the line
-            print '  > tweeting:'
-            print '  > \'' + text + '\''
-        else:
-            print '  > tweet too large.'
+        #tweet(text)
+        mysql_insert(filename, text)
 
-            print '  > generating html file.'
-            html = '<html><body>'
-            html = html + '<p>' + text.strip(url) + '</p>'
-            html = html + '<img src=\"'+url+'\" alt=\"capture\">'
-            html = html + '</body></html>'
-
-            print '  > uploading html to s3'
-            html_key_uqname = os.path.basename(key.name).split('.')[0]
-            html_key = self.bucket.new_key('html/'+html_key_uqname+'.html')
-            html_key.set_contents_from_string(html)
-            html_key.set_acl('public-read')
-            
-            print '  > generating new url'
-            text = 'Look what I just saw at #mhacks https://s3.amazonaws.com/' + self.bucket.name + '/' + html_key.name
-            print '  > ' + text
-
-        #Send the tweet!
-        print '  > tweeting...'
-        try:
-            status = self.connect_twitter().PostUpdates(text)
-        except:
-            print '  > failure :-('
-            return
-        print '  > success!'
         return
 
     def do_ocr(self, fname):
@@ -176,6 +145,47 @@ class OCR_Queue:
 
         return self.twit_conn
 
+    def tweet (self, text) :
+        #Tweet the contents if possible
+        #otherwise generate a html file and tweet that
+        print '  > found text.'
+        print '  > generating tweet.'
+        url = 'https://s3.amazonaws.com/' + self.bucket.name + '/' + key.name
+        text = text.strip() + ' ' + url
+        if len(text) < 140:
+            #tweet the line
+            print '  > tweeting:'
+            print '  > \'' + text + '\''
+        else:
+            print '  > tweet too large.'
+
+            print '  > generating html file.'
+            html = '<html><body>'
+            html = html + '<p>' + text.strip(url) + '</p>'
+            html = html + '<img src=\"'+url+'\" alt=\"capture\">'
+            html = html + '</body></html>'
+
+            print '  > uploading html to s3'
+            html_key_uqname = os.path.basename(key.name).split('.')[0]
+            html_key = self.bucket.new_key('html/'+html_key_uqname+'.html')
+            html_key.set_contents_from_string(html)
+            html_key.set_acl('public-read')
+
+            print '  > generating new url'
+            text = 'Look what I just saw at #mhacks https://s3.amazonaws.com/' + self.bucket.name + '/' + html_key.name
+            print '  > ' + text
+
+        #Send the tweet!
+        print '  > tweeting...'
+        try:
+            status = self.connect_twitter().PostUpdates(text)
+        except:
+            print '  > failure :-('
+            return
+        print '  > success!'
+
+        return
+
     def get_wordlist(self):
         if self.wordlist == None:
             print '  > loading american-english dictionary'
@@ -186,4 +196,12 @@ class OCR_Queue:
             fp.close()
 
         return self.wordlist
+
+    def mysql_insert (self, filename, text) :
+        # TODO: Get date/time associated with the image, rather than right now
+        now = time.localtime()
+        date = "%04d:%02d:%02d" %(now.tm_year, now.tm_mon, now.tm_mday)
+        tod  = "%02d:%02d:%02d" %(now.tm_hour, now.tm_min, now.tm_sec)
+        self.mysql.add_image(filename, text, date, tod)
+        self.mysql.commit()
 

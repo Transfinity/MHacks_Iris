@@ -57,6 +57,21 @@ function show(request, response) {
     });
 }
 
+function show_img(request, response) {
+    console.log("Request handler 'show_img' was called.");
+    fs.readFile("images/", "binary", function(error, image) {
+        if (error) {
+            response.writeHead(500, {"Content-Type": "text/plain"});
+            response.write(err + "\n");
+            response.end();
+        } else {
+            response.writeHead(200, {"Content-Type": "image/png"});
+            response.write(image, "binary");
+            response.end();
+        }
+    });
+}
+
 exports.start = start;
 exports.upload = upload;
 exports.show = show;
