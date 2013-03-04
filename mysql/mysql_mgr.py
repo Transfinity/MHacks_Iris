@@ -3,7 +3,7 @@
 import MySQLdb as mdb
 import sys
 
-SERVER_IP = 'localhost'
+SERVER_IP = 'iris.cbktya2t5svb.us-east-1.rds.amazonaws.com'
 USER_NAME = 'iris_ocr'
 PASSWORD  = 'blueballoon'
 DATABASE  = 'irisdb'
@@ -48,11 +48,9 @@ if __name__ == '__main__' :
     mgr = MySQL_Mgr()
     mgr.drop_table()
     mgr.create_table()
-    mgr.add_image('images/duck1.gif', 'fake text', '2013-02-28', '12:00:00')
-    mgr.add_image('images/duck2.jpg', 'fake text', '2013-02-28', '12:30:00')
-    mgr.add_image('images/duck3.jpg', 'fake text', '2013-02-28', '12:30:00')
-    mgr.add_image('images/duck4.jpg', 'fake text', '2013-02-09', '12:30:00')
-    mgr.add_image('images/fastfood.gif', 'fake text', '2013-02-28', '12:30:00')
-    mgr.add_image('images/Smiley.png', 'fake text', '2013-02-17', '12:30:00')
+    mgr.add_image('https://s3.amazonaws.com/mhacks_iris/raw/11.17.png', 'MHacks is the most epic hackathon. Ever. We are team IRIS, the future of vision.', '2013-02-03', '05:34:52')
+    mgr.add_image('https://s3.amazonaws.com/mhacks_iris/raw/402.41.png', 'Share your hack on Seelio. Win $500! And also, a chance to interview with: Create an account at seelio.com Add your hack Tag it w "mhacks2013"', '2013-02-03', '08:54:24')
+    mgr.add_image('https://s3.amazonaws.com/mhacks_iris/raw/42.36.png', 'MHACKS CHECK-IN', '2013-02-03', '08:54:24')
+    mgr.add_image('https://s3.amazonaws.com/mhacks_iris/raw/84.96.png', 'Coleman: ACLU, unions Laws hinder 'U' tuition equality', '2013-02-03', '09:04:53')
     mgr.commit()
     mgr.view_table()
