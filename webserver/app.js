@@ -10,7 +10,7 @@ var app = express();
 
 var mysql = require('mysql');
 var client = mysql.createConnection({
-    host     : 'localhost',
+    host     : 'iris.cbktya2t5svb.us-east-1.rds.amazonaws.com',
     user     : 'iris_webapp',
     password : 'redeagle',
     database : 'irisdb'
@@ -43,23 +43,28 @@ app.get('/', function (req, res) {
 
 app.get('/gallery', function(req, res) {
     console.log('Processing SQL query')
-    client.query('SELECT * FROM Snapshots WHERE DATE_SUB(CURDATE(), INTERVAL 7 DAY) <= Date', function(err, rows, fields) {
+    client.query('SELECT * FROM Snapshots WHERE DATE_SUB(CURDATE(), INTERVAL 40 DAY) <= Date', function(err, rows, fields) {
         if (err) throw err;
 
         // Retrieve urls from the database query
         var urls = new Array();
+        var text = new Array();
         for (i in rows) {
             urls[i] = rows[i].Filename;
+            text[i] = rows[i].Text;
         }
         console.log('URL list:')
         console.log(urls)
+        console.log('Text list:')
+        console.log(text)
 
         res.render('gallery', {
             title : 'Recent Images',
-            images: urls
+            images: urls,
+            descriptions: text
         });
     });
 });
 
 
-app.listen(3000)
+app.listen(80)
