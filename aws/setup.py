@@ -256,8 +256,7 @@ def start_ec2():
 #
 def prompt_user(prompt):
     while True:
-        print '\n' + prompt + ' [Y/N]: ',
-        lne = sys.stdin.readline().strip().lower()
+        lne = raw_input(prompt + ' [Y/N]: ').lower()
         if lne == 'y' or lne == 'yes':
             return True
         elif lne == 'n' or lne == 'no':
