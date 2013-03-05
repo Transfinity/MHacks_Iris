@@ -2,44 +2,181 @@ import boto
 import os
 import sys
 import time
+import ConfigParser
 
+#
+# Main
+#
 def main(argv):
-    if prompt_user('Would you like to set up the s3 bucket?'):
-        if not create_bucket():
+    config = ConfigParser.RawConfigParser()
+    config.read('aws.cfg')
+
+    if prompt_user('Would you like to manage the s3 bucket?'):
+        if not manage_s3(config):
             print 'Failed to set up the s3 bucket. Aborting.'
             return -1
 
-    if prompt_user('Would you like to set up the sqs queue?'):
-        if not create_queue():
+    if prompt_user('Would you like to manage the sqs queue?'):
+        if not manage_queue(config):
             print 'Failed to set up the sqs queue. Aborting.'
             return -1
 
-    if prompt_user('Would you like to set up an ec2 instance?'):
-        if not start_ec2():
+    if prompt_user('Would you like to manage an ec2 instance?'):
+        if not start_ec2(config):
             print 'Failed to start an ec2 instance. Aborting.'
             return -1
 
 
-def create_bucket():
+#
+# Amazon S3 management functionality
+#
+def create_bucket(s3, name):
+    #Keep looping until a bucket is successfully created
+    bucket_created = False
+    while not bucket_created:
+        if name == None:
+            print 'Please enter a new bucket name: ',
+            name = sys.stdin.readline().strip().lower()
+
+        #Try to create the bucket. If it fails, then prompt for a new bucket name
+        try:
+            s3.create_bucket(name)
+            print 'Successfully created bucket \'' + name + '\''
+
+            #Return the successfully created bucket name
+            return name
+        except boto.exception.S3CreateError:
+            name = None
+
+def manage_s3(config):
+    section_name = 'Amazon S3'
+
+    #Connect to Amazon S3
     s3 = boto.connect_s3()
 
-    bucket_name = 'mhacks_iris'
-    b = s3.lookup(bucket_name)
-    if b == None:
-        s3.create_bucket(bucket_name)
+    #Make sure the config file has a section for Amazon S3 configuration.
+    if not config.has_section(section_name):
+        config.add_section(section_name)
 
+    #The currently-in-use bucket name
+    cur_bucket_name = None
+
+    #Manage the S3 bucket
+    try:
+        #Get the configuration's bucket name
+        cfg_bucket_name = config.get(section_name, 'bucket_name')
+
+        #If the bucket doesn't exist, ask the user if they want to create it.
+        if None == s3.lookup(cfg_bucket_name):
+            print 'The current configuration is set to use bucket \'' + cfg_bucket_name + '\', but it doesn\'t exist.'
+            if prompt_user('Would you like to create \'' + cfg_bucket_name + '\'?'):
+                cur_bucket_name = create_bucket(s3, cfg_bucket_name)
+            elif prompt_user('Would you like to create a different bucket?'):
+                cur_bucket_name = create_bucket(s3, None)
+        #The bucket already exists. Ask the user if they want to use a different bucket
+        else:
+            print 'The currently active bucket is \'' + cfg_bucket_name + '\'.'
+            if prompt_user('Would you like to use a different bucket?'):
+                cur_bucket_name = create_bucket(s3, None)
+            else:
+                cur_bucket_name = cfg_bucket_name
+
+        #Write the bucket name into the configuration file if it was changed.
+        if cur_bucket_name != cfg_bucket_name:
+            config.set(section_name, 'bucket_name', cur_bucket_name)
+            with open('aws.cfg', 'wb') as cfgfile:
+                config.write(cfgfile)
+
+    #The bucket name wasn't present in the configuration file. Get the desired bucket name.
+    except ConfigParser.NoOptionError:
+        print 'The current configuration has no bucket name specified.'
+        cur_bucket_name = create_bucket(s3, None)
+
+        #Write the bucket name into the configuration file
+        config.set(section_name, 'bucket_name', cur_bucket_name)
+        with open('aws.cfg', 'wb') as cfgfile:
+            config.write(cfgfile)
+
+    print 'Using S3 Bucket \'' + cur_bucket_name + '\''
     return True
 
-def create_queue():
+#
+# Amazon SQS management functionality
+#
+def create_queue(sqs, name):
+    #Keep looping until a bucket is successfully created
+    queue_created = False
+    while not queue_created:
+        if name == None:
+            print 'Please enter a new queue name: ',
+            name = sys.stdin.readline().strip().lower()
+
+        #Make sure there isn't a conflict with an existing queue. If there is then prompt for a new queue name.
+        if None != sqs.lookup(name):
+            print '\''+name+'\' already exists.'
+            name = None
+        else:
+            sqs.create_queue(name)
+            print 'Successfully created queue \'' + name + '\''
+
+            #Return the successfully created bucket name
+            return name
+
+def manage_queue(config):
+    section_name = 'Amazon SQS'
+
+    #Connect to Amazon SQS
     sqs = boto.connect_sqs()
 
-    queue_name = 'mhacks_iris'
-    q = sqs.get_queue(queue_name)
-    if q == None:
-        sqs.create_queue(queue_name)
+    #Make sure the config file has a section for Amazon SQS configuration.
+    if not config.has_section(section_name):
+        config.add_section(section_name)
 
+    #The currently-in-use queue name
+    cur_queue_name = None
+
+    #Manage the SQS queue
+    try:
+        #Get the configuration's queue name
+        cfg_queue_name = config.get(section_name, 'queue_name')
+
+        #If the queue doesn't exist, ask the user if they want to create it.
+        if None == sqs.lookup(cfg_queue_name):
+            print 'The current configuration is set to use queue \'' + cfg_queue_name + '\', but it doesn\'t exist.'
+            if prompt_user('Would you like to create \'' + cfg_queue_name + '\'?'):
+                cur_queue_name = create_queue(sqs, cfg_queue_name)
+            elif prompt_user('Would you like to create a different queue?'):
+                cur_queue_name = create_queue(sqs, None)
+        #The queue already exists. Ask the user if they want to use a different queue
+        else:
+            print 'The currently active queue is \'' + cfg_queue_name + '\'.'
+            if prompt_user('Would you like to use a different queue?'):
+                cur_queue_name = create_queue(sqs, None)
+            else:
+                cur_queue_name = cfg_queue_name
+
+        #Write the bucket name into the configuration file if it was changed.
+        if cur_queue_name != cfg_queue_name:
+            config.set(section_name, 'queue_name', cur_queue_name)
+            with open('aws.cfg', 'wb') as cfgfile:
+                config.write(cfgfile)
+
+    #The queue name wasn't present in the configuration file. Get the desired queue name.
+    except ConfigParser.NoOptionError:
+        print 'The current configuration has no queue name specified.'
+        cur_queue_name = create_queue(sqs, None)
+
+        #Write the queue name into the configuration file
+        config.set(section_name, 'queue_name', cur_queue_name)
+        with open('aws.cfg', 'wb') as cfgfile:
+            config.write(cfgfile)
+
+    print 'Using SQS Queue \'' + cur_queue_name + '\''
     return True
 
+# 
+# Amazon EC2 management functionality
+#
 def get_key_pair(ec2, name):
     save_dir = os.path.join(os.environ['HOME'], '.ssh/')
     key_pair = ec2.get_key_pair(name)
@@ -114,17 +251,23 @@ def start_ec2():
 
     return True
 
+#
+# Assorted utility functionality
+#
 def prompt_user(prompt):
     while True:
-        print prompt + ' [Y/N]'
+        print '\n' + prompt + ' [Y/N]: ',
         lne = sys.stdin.readline().strip().lower()
         if lne == 'y' or lne == 'yes':
             return True
         elif lne == 'n' or lne == 'no':
             return False
         else:
-            print 'please enter either [y]es or [n]o'
+            print 'please enter either [y]es or [n]o: ',
 
+#
+# Run main
+#
 if __name__ == '__main__':
     sys.exit(main(sys.argv))
 
