@@ -6,8 +6,6 @@ import tesseract
 import cv
 import ConfigParser
 
-from mysql.mysql_mgr import MySQL_Mgr
-
 class OCR_Queue:
     def __init__(self, s3_connection = None, sqs_connection = None, twitter_connection = None, word_dictionary = None):
         self.twit_conn = twitter_connection
@@ -15,9 +13,13 @@ class OCR_Queue:
         self.sqs_conn = sqs_connection
         self.wordlist = word_dictionary
 
-        self.mysql = MySQL_Mgr()
-        self.mysql.create_table()
+        #Lazily-instantiate the mysql connection so that the helmet
+        #doesn't need to open a mysql connection.
+        #Only the reader of the queue needs the mysql functionality.
+        self.mysql = None
 
+        #Pre-emptively connect to Amazon S3 and SQS.
+        #The reader and writer both need them to operate.
         if self.s3_conn == None:
             self.s3_conn = boto.connect_s3()
         if self.sqs_conn == None:
@@ -54,7 +56,7 @@ class OCR_Queue:
         message = self.queue.new_message(body=simplejson.dumps({'key': key.name}))
         self.queue.write(message)
 
-        print '  > enqueued frame ' + key.name
+        self.log_to_console('  > enqueued frame ' + key.name)
 
 
     def dequeue_frame(self, dest_dir):
@@ -83,13 +85,13 @@ class OCR_Queue:
             #surely do it again...
             self.queue.delete_message(m)
 
-        print '  > dequeued frame ' + '/' + key.name
+        self.log_to_console('  > dequeued frame ' + '/' + key.name)
         return True
 
 
     def process_frame(self, filename, key):
         #Open the file
-        print '  > processing \'' + filename + '\''
+        self.log_to_console('  > processing \'' + filename + '\'')
 
         #Do OCR on the file
         text = self.do_ocr(filename)
@@ -98,6 +100,7 @@ class OCR_Queue:
         #Strip out non-words
         text = ''
         has_four_word = False
+        ignored_words = []
         for w in words:
             w_strip = w.strip('.,?!\'\"').lower()
             try:
@@ -113,12 +116,12 @@ class OCR_Queue:
                 if cnt > 3:
                     text = text + ' ' + w
                 else:
-                    print ' ignoring non-word \''+w+'\'',
-        print ''
+                    ignored_words.append(w)
+        self.log_to_console(' ignored non-words: ' + ignored_words)
 
         #Ignore the frame if no text found
         if len(text) == 0 or not has_four_word:
-            print '  > frame contained no discernable text'
+            self.log_to_console('  > frame contained no discernable text')
             return
 
         #tweet(text)
@@ -139,7 +142,7 @@ class OCR_Queue:
         return tesseract.ProcessPagesBuffer(buf, len(buf), api)
 
     def load_twitter_credentials(self, fname):
-        print '  > loading twitter credentials'
+        self.log_to_console('  > loading twitter credentials')
         fp = open(fname, 'r')
         c_k = fp.readline().strip()
         c_s = fp.readline().strip()
@@ -148,9 +151,10 @@ class OCR_Queue:
         fp.close()
         return (c_k, c_s, a_k, a_s)
 
+    #Allow lazy-instantiation of the twitter connection
     def connect_twitter(self):
         if self.twit_conn == None:
-            print '  > connecting to twitter'
+            self.log_to_console('  > connecting to twitter')
             creds = self.load_twitter_credentials(os.environ['HOME']+'/.twit.cfg')
 
             self.twit_conn = twitter.Api(
@@ -164,47 +168,47 @@ class OCR_Queue:
     def tweet (self, text) :
         #Tweet the contents if possible
         #otherwise generate a html file and tweet that
-        print '  > found text.'
-        print '  > generating tweet.'
+        self.log_to_console('  > found text.')
+        self.log_to_console('  > generating tweet.')
         url = 'https://s3.amazonaws.com/' + self.bucket.name + '/' + key.name
         text = text.strip() + ' ' + url
         if len(text) < 140:
             #tweet the line
-            print '  > tweeting:'
-            print '  > \'' + text + '\''
+            self.log_to_console('  > tweeting:')
+            self.log_to_console('  > \'' + text + '\'')
         else:
-            print '  > tweet too large.'
+            self.log_to_console('  > tweet too large.')
 
-            print '  > generating html file.'
+            self.log_to_console('  > generating html file.')
             html = '<html><body>'
             html = html + '<p>' + text.strip(url) + '</p>'
             html = html + '<img src=\"'+url+'\" alt=\"capture\">'
             html = html + '</body></html>'
 
-            print '  > uploading html to s3'
+            self.log_to_console('  > uploading html to s3')
             html_key_uqname = os.path.basename(key.name).split('.')[0]
             html_key = self.bucket.new_key('html/'+html_key_uqname+'.html')
             html_key.set_contents_from_string(html)
             html_key.set_acl('public-read')
 
-            print '  > generating new url'
+            self.log_to_console('  > generating new url')
             text = 'Look what I just saw at #mhacks https://s3.amazonaws.com/' + self.bucket.name + '/' + html_key.name
-            print '  > ' + text
+            self.log_to_console('  > ' + text)
 
         #Send the tweet!
-        print '  > tweeting...'
+        self.log_to_console('  > tweeting...')
         try:
             status = self.connect_twitter().PostUpdates(text)
         except:
-            print '  > failure :-('
+            self.log_to_console('  > failure :-(')
             return
-        print '  > success!'
+        self.log_to_console('  > success!')
 
         return
 
     def get_wordlist(self):
         if self.wordlist == None:
-            print '  > loading american-english dictionary'
+            self.log_to_console('  > loading american-english dictionary')
             fp = open('/usr/share/dict/american-english', 'r')
             self.wordlist = {}
             for line in fp:
@@ -213,11 +217,24 @@ class OCR_Queue:
 
         return self.wordlist
 
+    #Allow lazy-instantiation of the mysql connection
+    def get_mysql_conn(self):
+        if self.mysql == None:
+            from mysql.mysql_mgr import MySQL_Mgr
+            self.mysql = MySQL_Mgr()
+        return self.mysql
+
     def mysql_insert (self, filename, text) :
+        #Get the mysql connection
+        mysql = get_mysql_conn()
         # TODO: Get date/time associated with the image, rather than right now
         now = time.localtime()
         date = "%04d:%02d:%02d" %(now.tm_year, now.tm_mon, now.tm_mday)
         tod  = "%02d:%02d:%02d" %(now.tm_hour, now.tm_min, now.tm_sec)
-        self.mysql.add_image(filename, text, date, tod)
-        self.mysql.commit()
+        mysql.add_image(filename, text, date, tod)
+        mysql.commit()
+
+    def log_to_console(self, msg):
+        if not self.quiet:
+            print msg
 
