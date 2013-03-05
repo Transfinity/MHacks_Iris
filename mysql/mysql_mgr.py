@@ -2,20 +2,32 @@
 
 import MySQLdb as mdb
 import sys
+import ConfigParser
 
-SERVER_IP = 'iris.cbktya2t5svb.us-east-1.rds.amazonaws.com'
-USER_NAME = 'iris_ocr'
-PASSWORD  = 'blueballoon'
-DATABASE  = 'irisdb'
 INSERT_QUERY = "INSERT INTO Snapshots(Filename, Text, Date, Time)  \
         VALUES('%s','%s','%s', '%s')"
 
 class MySQL_Mgr :
 
     def __init__ (self) :
-        self.con = mdb.connect(SERVER_IP, USER_NAME, PASSWORD, DATABASE)
-        with self.con :
-            self.cur = self.con.cursor()
+        try:
+            #Load the MySQL configuration
+            config = ConfigParser.RawConfigParser()
+            config.read('mysql/mysql.cfg')
+
+            rds_host = config.get('MySQL', 'rds_hostname')
+            username = config.get('MySQL', 'username')
+            pswd = config.get('MySQL', 'password')
+            db_name = config.get('MySQL', 'database_name')
+
+            #Try to connect to the db
+            self.con = mdb.connect(rds_host, username, pswd, db_name)
+            with self.con :
+                self.cur = self.con.cursor()
+        #Handle errors
+        except (ConfigParser.NoSectionError, ConfigParser.NoOptionError):
+            raise RuntimeError('Could not load the MySQL database configuration. Did you run setup.py first?')
+
 
     def create_table (self) :
         create_query = """
