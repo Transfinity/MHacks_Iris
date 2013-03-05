@@ -4,11 +4,12 @@ import simplejson
 import twitter
 import tesseract
 import cv
+import ConfigParser
 
 from mysql.mysql_mgr import MySQL_Mgr
 
 class OCR_Queue:
-    def __init__(self, s3_bucket_name = 'mhacks_iris', sqs_queue_name = 'mhacks_iris', s3_connection = None, sqs_connection = None, twitter_connection = None, word_dictionary = None):
+    def __init__(self, s3_connection = None, sqs_connection = None, twitter_connection = None, word_dictionary = None):
         self.twit_conn = twitter_connection
         self.s3_conn = s3_connection
         self.sqs_conn = sqs_connection
@@ -22,8 +23,22 @@ class OCR_Queue:
         if self.sqs_conn == None:
             self.sqs_conn = boto.connect_sqs()
 
-        self.bucket = self.s3_conn.get_bucket(s3_bucket_name)
-        self.queue = self.sqs_conn.get_queue(sqs_queue_name)
+        #Read the AWS configuration file
+        config = ConfigParser.RawConfigParser()
+        config.read('aws/aws.cfg')
+
+        #Try to connect to the AWS resources
+        try:
+            self.bucket = self.s3_conn.get_bucket(config.get('Amazon S3', 'bucket_name'))
+            self.queue = self.sqs_conn.get_queue(config.get('Amazon SQS', 'queue_name'))
+
+        #Handle errors
+            if self.queue == None:
+                raise RuntimeError('SQS Queue not found. Did you run setup.py first?')
+        except (ConfigParser.NoSectionError, ConfigParser.NoOptionError):
+            raise RuntimeError('Could not load the AWS configuration. Did you run setup.py first?')
+        except (boto.exception.S3ResponseError, boto.exception.SQSError), err:
+            raise RuntimeError(str(err) + '\nAWS resources not found. Did you run setup.py first?')
 
         self.quiet = False
 
