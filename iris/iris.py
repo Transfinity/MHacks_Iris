@@ -345,6 +345,8 @@ class Iris :
 
 
     def run (self) :
+        prev_time = time.time()
         while self.repeat():
-            pass
+            if time.time() - prev_time < 0.05:
+                time.sleep(time.time() - prev_time)
 
