@@ -231,7 +231,7 @@ class OCR_Queue:
         now = time.localtime()
         date = "%04d:%02d:%02d" %(now.tm_year, now.tm_mon, now.tm_mday)
         tod  = "%02d:%02d:%02d" %(now.tm_hour, now.tm_min, now.tm_sec)
-        mysql.add_image(filename, text, date, tod)
+        mysql.add_image(filename, text, date + ' ' + tod)
         mysql.commit()
 
     def log_to_console(self, msg):
