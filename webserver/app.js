@@ -7,6 +7,7 @@ var express = require('express')
 
 
 var app = express();
+app.listen(80)
 
 var mysql = require('mysql');
 var client = mysql.createConnection({
@@ -18,13 +19,19 @@ var client = mysql.createConnection({
 
 client.connect();
 
+var topbar_links = [
+{title: 'Home', link: '/'}, 
+{title: 'About', link: '/about'}, 
+{title: 'Gallery', link: '/gallery'}
+]
 
 function compile(str, path) {
-  return stylus(str)
-    .set('filename', path)
-    .use(nib());
+    return stylus(str)
+      .set('filename', path)
+      .use(nib());
 }
 
+//Set up our views with jade
 app.set('views', __dirname + '/views')
 app.set('view engine', 'jade')
 app.use(express.logger('dev'))
@@ -35,36 +42,41 @@ app.use(stylus.middleware(
 ))
 app.use(express.static(__dirname + '/public'))
 
+//Route for the home page
 app.get('/', function (req, res) {
   res.render('index',
-  { title : 'Home' , imagesrc : 'images/fastfood.gif', arr : ['red', 'blue', 'green']}
+  { title : 'Home' , topbar_links : topbar_links}
   )
 })
 
+app.get('/about', function(req, res) {
+    res.render('about',
+    { title : 'About' , topbar_links : topbar_links}
+    )
+})
+
+//Route for the gallery
 app.get('/gallery', function(req, res) {
-    console.log('Processing SQL query')
     client.query('SELECT * FROM Snapshots WHERE DATE_SUB(CURDATE(), INTERVAL 40 DAY) <= Date', function(err, rows, fields) {
         if (err) throw err;
 
         // Retrieve urls from the database query
         var urls = new Array();
         var text = new Array();
+        var dates = new Array();
         for (i in rows) {
             urls[i] = rows[i].Filename;
             text[i] = rows[i].Text;
+            dates[i] = rows[i].Date
         }
-        console.log('URL list:')
-        console.log(urls)
-        console.log('Text list:')
-        console.log(text)
 
         res.render('gallery', {
-            title : 'Recent Images',
+            title : 'Gallery',
             images: urls,
-            descriptions: text
+            descriptions: text,
+            dates: dates,
+            topbar_links : topbar_links
         });
     });
 });
 
-
-app.listen(80)

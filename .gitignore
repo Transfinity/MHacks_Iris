@@ -5,4 +5,4 @@
 # Auto-generated files
 node/node_modules
 webserver/node_modules
-webserver/public/stylesheets/style.css
+webserver/public/css/style.css

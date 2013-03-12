@@ -1,15 +1,27 @@
 !!!5
 html
   head
-    title #{title} - My Site
-    link(rel='stylesheet', href='/stylesheets/style.css')
+    title #{title}
+    link(rel='stylesheet', href='/css/style.css')
   body
-    header
-      h1 My Site
-    .homecontainer
-      .main-content
+    .navbar.navbar-inverse.navbar-fixed-top
+      .navbar-inner
+        .container
+          a.brand(href="/") Iris
+          .nav-collapse.collapse
+            ul.nav
+              mixin list_element(link, dest)
+                - if (title == link)
+                  li.active
+                    a(href= dest) #{link}
+                - else
+                  li
+                    a(href= dest) #{link}
+              - var i = 0;
+              - for (i = 0; i < topbar_links.length; i++)
+                mixin list_element(topbar_links[i].title, topbar_links[i].link)
+    .container
+      .page-header
+        block header
+      .hero-unit
         block content
-      .sidebar
-        block sidebar
-    footer
-      p Running on node with Express, Jade and Stylus

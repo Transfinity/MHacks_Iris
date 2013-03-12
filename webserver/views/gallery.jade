@@ -1,26 +1,16 @@
-!!!5
-html
-    head
-        title #{title} - Gallery
-    link(rel='stylesheet', href='/stylesheets/style.css')
-  body
-      header
-        h1 Gallery
+extend layout
 
-      .gallerycontainer
-          table(border='1')
-              - var i = 0;
-              - while (i < images.length)
-                  tr
-                      - var j = 0;
-                      - for (; j+i < images.length && j < 4; j++)
-                          td
-                              .entry
-                                  - var alttext = 'Alt text for image ' + images[i+j];
-                                  img(alt=alttext, src=images[i+j])
-                                  p= descriptions[i+j];
-                      - i += 4;
+block header
+  h1 #{title}
 
-
-    footer
-        p Running on node with Express, Jade and Stylus
+block content
+  ul.thumbnails
+    - var i = 0;
+    - for(; i < images.length; i++)
+      li.span3
+        .thumbnail
+          - var alttext = 'Alt text for image ' + images[i];
+          a.thumbnail(href=images[i])
+            img.img-rounded(src=images[i], alt=alttext)
+          h4= dates[i]
+          p= descriptions[i]
